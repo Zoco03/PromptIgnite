@@ -419,13 +419,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Listen for multi-tab BroadcastChannel & Storage events
   useEffect(() => {
-    if (syncChannel) {
-      const handleSync = (event: MessageEvent) => {
-        reloadAllFromStorage();
-      };
-      syncChannel.addEventListener('message', handleSync);
-      return () => syncChannel.removeEventListener('message', handleSync);
-    }
+    if (!syncChannel) return;
+    const handleSync = (event: MessageEvent) => {
+      const { type } = event.data ?? {};
+      if (type && type !== 'USERS_UPDATED' && type !== 'FULL_SYNC') return;
+      reloadAllFromStorage();
+    };
+    syncChannel.addEventListener('message', handleSync);
+    return () => syncChannel.removeEventListener('message', handleSync);
   }, [reloadAllFromStorage]);
 
   useEffect(() => {
@@ -455,6 +456,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [certificates, broadcastUpdate]);
 
   useEffect(() => {
+    localStorage.setItem('skillswap_certificates', JSON.stringify(certificates));
+  }, [certificates]);
+
+  useEffect(() => {
     localStorage.setItem('skillswap_requests', JSON.stringify(sessionRequests));
     broadcastUpdate('FULL_SYNC');
   }, [sessionRequests, broadcastUpdate]);
@@ -480,6 +485,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [messages, broadcastUpdate]);
 
   useEffect(() => {
+    localStorage.setItem('skillswap_live_sessions', JSON.stringify(liveSessions));
+  }, [liveSessions]);
+
+  useEffect(() => {
+    localStorage.setItem('skillswap_workshops', JSON.stringify(workshops));
+  }, [workshops]);
+
+  useEffect(() => {
+    localStorage.setItem('skillswap_conversations', JSON.stringify(conversations));
+  }, [conversations]);
+
+  useEffect(() => {
+    localStorage.setItem('skillswap_messages', JSON.stringify(messages));
+  }, [messages]);
+
+  useEffect(() => {
     localStorage.setItem('skillswap_transactions', JSON.stringify(transactions));
     broadcastUpdate('FULL_SYNC');
   }, [transactions, broadcastUpdate]);
@@ -498,6 +519,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem('skillswap_notifications', JSON.stringify(notifications));
     broadcastUpdate('FULL_SYNC');
   }, [notifications, broadcastUpdate]);
+
+  useEffect(() => {
+    localStorage.setItem('skillswap_study_logs', JSON.stringify(studyLogs));
+  }, [studyLogs]);
+
+  useEffect(() => {
+    localStorage.setItem('skillswap_notifications', JSON.stringify(notifications));
+  }, [notifications]);
+
+  // Derive Dynamic Leaderboard from real users
+  const leaderboard: LeaderboardEntry[] = allUsers
+    .map((u) => {
+      const topSk = userSkills.find(s => s.userId === u.id)?.skillName || 'General Skills';
+      const verifiedCount = userSkills.filter(s => s.userId === u.id && s.isVerified).length;
+      return {
+        rank: 1,
+        userId: u.id,
+        userName: u.name,
+        userAvatar: u.avatar,
+        department: u.department,
+        topSkill: topSk,
+        tokens: u.tokens || u.walletBalance || 0,
+        karma: u.tokens || u.walletBalance || 0,
+        sessionsTaught: u.totalHoursTaught || 0,
+        rating: u.avgRating ?? 0.0,
+        verifiedSkillsCount: verifiedCount,
+        change: 'same' as const
+      };
+    })
+    .sort((a, b) => b.tokens - a.tokens)
+    .map((item, index) => ({ ...item, rank: index + 1 }));
 
   useEffect(() => {
     localStorage.setItem('skillswap_study_logs', JSON.stringify(studyLogs));
@@ -846,7 +898,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setAllUsers(prev => {
       const updated = prev.map(u => {
         if (u.id === req.learnerId) {
-          const newBal = Math.max(0, (u.skillpoints ?? u.walletBalance ?? 50) - req.tokenPrice);
+          const newBal = Math.max(0, (u.skillpoints ?? u.walletBalance ?? u.tokens ?? 50) - req.tokenPrice);
           return {
             ...u,
             walletBalance: newBal,
