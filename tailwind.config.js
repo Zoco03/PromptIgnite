@@ -7,10 +7,11 @@ export default {
   theme: {
     extend: {
       colors: {
-        ink: "#111111",
+        primary: "#111111",
         "on-primary": "#ffffff",
         canvas: "#ffffff",
         "soft-cloud": "#f5f5f5",
+        ink: "#111111",
         charcoal: "#39393b",
         ash: "#4b4b4d",
         mute: "#707072",
@@ -31,15 +32,39 @@ export default {
         "accent-pink-deep": "#4c012d",
       },
       fontFamily: {
-        display: ['"Bebas Neue"', 'Futura', 'sans-serif'],
-        sans: ['Inter', '"Helvetica Now Text"', 'Helvetica', 'Arial', 'sans-serif'],
+        display: [
+          '"Bebas Neue"',
+          'Inter',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          'sans-serif'
+        ],
+        sans: [
+          'Inter',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          '"Segoe UI"',
+          'Roboto',
+          'Helvetica',
+          'Arial',
+          'sans-serif'
+        ],
+        mono: [
+          '"JetBrains Mono"',
+          'ui-monospace',
+          'SFMono-Regular',
+          'Menlo',
+          'Monaco',
+          'Consolas',
+          'monospace'
+        ],
       },
       borderRadius: {
+        none: "0px",
         sm: "18px",
         md: "24px",
         lg: "30px",
         full: "9999px",
-        none: "0px",
       },
       spacing: {
         xxs: "2px",
@@ -52,9 +77,9 @@ export default {
         section: "48px",
       },
       boxShadow: {
-        "hairline-bottom": "inset 0 -1px 0 #e5e5e5",
-        "hairline-top": "inset 0 1px 0 #cacacb",
-        "search-halo": "0 0 0 4px #f5f5f5",
+        none: "none",
+        "hairline-inset": "inset 0 -1px 0 #e5e5e5",
+        "search-halo": "0 0 0 12px #f5f5f5",
       }
     },
   },

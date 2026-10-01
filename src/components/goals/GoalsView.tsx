@@ -33,7 +33,7 @@ export const GoalsView: React.FC = () => {
   };
 
   return (
-    <div className="space-y-10 pb-16">
+    <div className="max-w-[1440px] mx-auto px-6 sm:px-8 md:px-12 py-8 space-y-8 pb-16">
       
       {/* Header */}
       <div className="border-b border-hairline pb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -45,7 +45,7 @@ export const GoalsView: React.FC = () => {
             LEARNING GOALS & MILESTONES
           </h1>
           <p className="text-xs sm:text-sm text-mute font-normal mt-1 max-w-2xl">
-            Set multi-week skill targets, break them into actionable milestones, and earn Karma rewards upon each verified check-off.
+            Set multi-week skill targets, break them into actionable milestones, and earn SkillPoints rewards upon each verified check-off.
           </p>
         </div>
 

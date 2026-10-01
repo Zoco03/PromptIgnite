@@ -16,6 +16,13 @@ export type SkillCategory =
 
 export type SkillLevel = 'Beginner' | 'Intermediate' | 'Advanced';
 
+export interface SocialLinks {
+  github?: string;
+  instagram?: string;
+  linkedin?: string;
+  portfolio?: string;
+}
+
 export interface User {
   id: string;
   name: string;
@@ -26,7 +33,9 @@ export interface User {
   bio: string;
   avatar: string;
   timezone: string;
-  karma: number;
+  skillpoints: number;
+  tokens: number; // Alias for skillpoints
+  karma?: number; // Alias for skillpoints
   leaderboardRank: number;
   walletBalance: number;
   escrowBalance: number;
@@ -37,11 +46,13 @@ export interface User {
   reviewCount: number;
   isVerifiedStudent: boolean;
   joinedDate: string;
-  badges: KarmaBadge[];
+  badges: TokenBadge[];
   featuredSkillId?: string;
+  socials?: SocialLinks;
+  skillsLearning?: string[];
 }
 
-export interface KarmaBadge {
+export interface TokenBadge {
   id: string;
   name: string;
   icon: string;
@@ -88,6 +99,8 @@ export interface UserSkill {
   tags: string[];
   totalSessionsTaught: number;
   rating: number;
+  certificateUrl?: string;
+  certificateName?: string;
 }
 
 export interface Certificate {
@@ -109,11 +122,11 @@ export interface Certificate {
 export interface AvailabilitySlot {
   id: string;
   userId: string;
-  dayOfWeek: number; // 0=Sun, 1=Mon, ..., 6=Sat
-  startTime: string; // "14:00"
-  endTime: string;   // "15:00"
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
   isRecurring: boolean;
-  date?: string;     // Specific date if one-off "2026-10-05"
+  date?: string;
 }
 
 export type RequestStatus = 
@@ -127,7 +140,7 @@ export type RequestStatus =
   | 'disputed';
 
 export interface CounterProposal {
-  proposedBy: string; // userId
+  proposedBy: string;
   tokenPrice: number;
   proposedDate: string;
   proposedTime: string;
@@ -284,14 +297,15 @@ export type TransactionType =
   | 'SESSION_ESCROW_REFUND'
   | 'WORKSHOP_REGISTRATION'
   | 'WORKSHOP_PAYOUT'
-  | 'KARMA_BONUS'
+  | 'TOKEN_BONUS'
+  | 'FOCUS_REWARD'
   | 'ADMIN_ADJUSTMENT';
 
 export interface Transaction {
   id: string;
   userId: string;
   type: TransactionType;
-  amount: number; // positive for credit, negative for debit
+  amount: number;
   balanceAfter: number;
   description: string;
   timestamp: string;
@@ -305,7 +319,8 @@ export interface Milestone {
   completed: boolean;
   targetDate: string;
   completedAt?: string;
-  karmaReward: number;
+  tokenReward: number;
+  karmaReward?: number;
 }
 
 export interface Goal {
@@ -317,6 +332,7 @@ export interface Goal {
   progressPercent: number;
   milestones: Milestone[];
   createdAt: string;
+  status?: 'active' | 'completed' | 'paused';
 }
 
 export interface StudyLog {
@@ -325,8 +341,11 @@ export interface StudyLog {
   skillName: string;
   durationMinutes: number;
   date: string;
-  type: 'self_pomodoro' | 'session_learned' | 'session_taught';
+  type: 'self_pomodoro' | 'camera_focus' | 'session_learned' | 'session_taught';
+  focusScore?: number;
+  distractionCount?: number;
   notes?: string;
+  tokensAwarded?: number;
 }
 
 export type NotificationType = 
@@ -361,7 +380,8 @@ export interface LeaderboardEntry {
   userAvatar: string;
   department: Department;
   topSkill: string;
-  karma: number;
+  tokens: number;
+  karma?: number;
   sessionsTaught: number;
   rating: number;
   verifiedSkillsCount: number;
@@ -375,7 +395,7 @@ export interface SkillGapData {
   demandSearchesAndRequests: number;
   supplyTeachers: number;
   availableHoursPerWeek: number;
-  gapIndex: number; // Demand / (Supply * Hours)
+  gapIndex: number;
   status: 'Critical Gap' | 'Deficit' | 'Balanced' | 'Surplus';
   actionRecommendation: string;
 }
@@ -404,7 +424,10 @@ export interface Review {
   learnerName: string;
   learnerAvatar: string;
   skillName: string;
-  rating: number; // 1 to 5
+  rating: number;
   feedback: string;
   createdAt: string;
+  date?: string;
+  reviewerName?: string;
+  skillId?: string;
 }

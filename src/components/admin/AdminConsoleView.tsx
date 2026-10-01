@@ -52,7 +52,7 @@ export const AdminConsoleView: React.FC = () => {
   };
 
   return (
-    <div className="space-y-10 pb-16">
+    <div className="max-w-[1440px] mx-auto px-6 sm:px-8 md:px-12 py-8 space-y-8 pb-16">
       
       {/* Header */}
       <div className="border-b border-hairline pb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
