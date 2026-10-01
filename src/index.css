@@ -1,0 +1,179 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --color-ink: #111111;
+    --color-on-primary: #ffffff;
+    --color-canvas: #ffffff;
+    --color-soft-cloud: #f5f5f5;
+    --color-charcoal: #39393b;
+    --color-ash: #4b4b4d;
+    --color-mute: #707072;
+    --color-stone: #9e9ea0;
+    --color-hairline: #cacacb;
+    --color-hairline-soft: #e5e5e5;
+    --color-sale: #d30005;
+    --color-sale-deep: #780700;
+    --color-success: #007d48;
+    --color-success-bright: #1eaa52;
+    --color-info: #1151ff;
+    --color-info-deep: #0034e3;
+    --color-accent-pink: #ed1aa0;
+    --color-accent-pink-soft: #ffb0dd;
+    --color-accent-purple-soft: #beaffd;
+    --color-accent-purple-pale: #d6d1ff;
+    --color-accent-teal: #0a7281;
+    --color-accent-pink-deep: #4c012d;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: 'Bebas Neue', 'Futura', sans-serif;
+    letter-spacing: 0.02em;
+  }
+}
+
+/* Custom design classes adhering to DESIGN-AKTC.md */
+.btn-primary {
+  background-color: var(--color-ink);
+  color: var(--color-on-primary);
+  border-radius: 9999px;
+  padding: 12px 28px;
+  font-weight: 500;
+  font-size: 15px;
+  line-height: 1.5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: transform 0.1s ease, opacity 0.1s ease;
+  user-select: none;
+}
+
+.btn-primary:active {
+  transform: scale(0.96);
+  opacity: 0.85;
+}
+
+.btn-secondary {
+  background-color: var(--color-soft-cloud);
+  color: var(--color-ink);
+  border-radius: 9999px;
+  padding: 12px 28px;
+  font-weight: 500;
+  font-size: 15px;
+  line-height: 1.5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: transform 0.1s ease, opacity 0.1s ease;
+  user-select: none;
+}
+
+.btn-secondary:active {
+  transform: scale(0.96);
+  opacity: 0.85;
+}
+
+.btn-outline-image {
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+  border-radius: 9999px;
+  padding: 10px 24px;
+  font-weight: 500;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: transform 0.1s ease;
+}
+
+.btn-outline-image:active {
+  transform: scale(0.96);
+}
+
+.btn-icon-circular {
+  background-color: var(--color-soft-cloud);
+  color: var(--color-ink);
+  border-radius: 9999px;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.1s ease, background-color 0.1s ease;
+}
+
+.btn-icon-circular:active {
+  transform: scale(0.92);
+}
+
+.search-pill-input {
+  background-color: var(--color-soft-cloud);
+  color: var(--color-ink);
+  border-radius: 24px;
+  padding: 8px 16px 8px 40px;
+  height: 40px;
+  font-size: 15px;
+  outline: none;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+}
+
+.search-pill-input:focus {
+  background-color: var(--color-canvas);
+  border-color: var(--color-ink);
+  box-shadow: 0 0 0 4px var(--color-soft-cloud);
+}
+
+/* Concentric ring swatch dot */
+.swatch-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 9999px;
+  transition: all 0.2s ease;
+}
+
+.swatch-dot-active {
+  box-shadow: 0 0 0 2px var(--color-canvas), 0 0 0 4px var(--color-ink);
+}
+
+/* Hairline borders */
+.border-hairline {
+  border-color: var(--color-hairline);
+}
+
+.border-hairline-soft {
+  border-color: var(--color-hairline-soft);
+}
+
+/* Smooth minimal scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-soft-cloud);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-hairline);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-mute);
+}
