@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -20,160 +22,251 @@
     --color-success-bright: #1eaa52;
     --color-info: #1151ff;
     --color-info-deep: #0034e3;
-    --color-accent-pink: #ed1aa0;
-    --color-accent-pink-soft: #ffb0dd;
-    --color-accent-purple-soft: #beaffd;
-    --color-accent-purple-pale: #d6d1ff;
-    --color-accent-teal: #0a7281;
-    --color-accent-pink-deep: #4c012d;
   }
 
-  body {
+  * {
+    box-sizing: border-box;
+  }
+
+  html, body {
     background-color: var(--color-canvas);
     color: var(--color-ink);
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    overflow-x: hidden;
+    font-size: 16px;
+    line-height: 1.5;
   }
 
-  h1, h2, h3, .font-display {
-    font-family: 'Bebas Neue', 'Futura', sans-serif;
-    letter-spacing: 0.02em;
+  /* Display campaign tier: Bebas Neue uppercase */
+  .font-display, .display-campaign {
+    font-family: 'Bebas Neue', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: clamp(2.5rem, 6vw, 6rem);
+    font-weight: 400;
+    line-height: 0.92;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+
+  .font-mono {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    letter-spacing: -0.02em;
+  }
+
+  h1 {
+    font-size: clamp(1.75rem, 3.5vw, 2rem);
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
+  h2 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
+  h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1.5;
+  }
+
+  p {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 15px;
+    font-weight: 400;
+    line-height: 1.55;
+    color: var(--color-charcoal);
   }
 }
 
-/* Custom design classes adhering to DESIGN-AKTC.md */
+/* ========================================================
+   DESIGN-AKTC COMPONENT SPECIFICATIONS
+   ======================================================== */
+
+/* button-primary */
 .btn-primary {
-  background-color: var(--color-ink);
-  color: var(--color-on-primary);
-  border-radius: 9999px;
-  padding: 12px 28px;
+  background-color: #111111;
+  color: #ffffff;
+  font-family: "Helvetica Now Text Medium", "Helvetica Neue", Inter, Arial, sans-serif;
+  font-size: 16px;
   font-weight: 500;
-  font-size: 15px;
   line-height: 1.5;
+  border-radius: 9999px;
+  padding: 12px 32px;
+  min-height: 48px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  transition: transform 0.1s ease, opacity 0.1s ease;
+  border: 1px solid #111111;
+  cursor: pointer;
+  transition: opacity 0.15s ease, transform 0.15s ease;
   user-select: none;
 }
-
+.btn-primary:hover {
+  background-color: #262626;
+  border-color: #262626;
+}
 .btn-primary:active {
-  transform: scale(0.96);
-  opacity: 0.85;
+  opacity: 0.5;
+  transform: scale(0.97);
 }
 
+/* button-secondary */
 .btn-secondary {
-  background-color: var(--color-soft-cloud);
-  color: var(--color-ink);
-  border-radius: 9999px;
-  padding: 12px 28px;
+  background-color: #f5f5f5;
+  color: #111111;
+  font-family: "Helvetica Now Text Medium", "Helvetica Neue", Inter, Arial, sans-serif;
+  font-size: 16px;
   font-weight: 500;
-  font-size: 15px;
   line-height: 1.5;
+  border-radius: 9999px;
+  padding: 12px 32px;
+  min-height: 48px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  transition: transform 0.1s ease, opacity 0.1s ease;
+  border: 1px solid #e5e5e5;
+  cursor: pointer;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
   user-select: none;
 }
-
+.btn-secondary:hover {
+  background-color: #e5e5e5;
+}
 .btn-secondary:active {
-  transform: scale(0.96);
-  opacity: 0.85;
+  opacity: 0.5;
+  transform: scale(0.97);
 }
 
-.btn-outline-image {
-  background-color: var(--color-canvas);
-  color: var(--color-ink);
-  border-radius: 9999px;
-  padding: 10px 24px;
+/* button-outline-on-image */
+.btn-outline-on-image {
+  background-color: #ffffff;
+  color: #111111;
+  font-family: "Helvetica Now Text Medium", "Helvetica Neue", Inter, Arial, sans-serif;
+  font-size: 16px;
   font-weight: 500;
-  font-size: 14px;
+  line-height: 1.5;
+  border-radius: 9999px;
+  padding: 12px 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  transition: transform 0.1s ease;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  user-select: none;
+}
+.btn-outline-on-image:hover {
+  background-color: #f5f5f5;
 }
 
-.btn-outline-image:active {
-  transform: scale(0.96);
-}
-
+/* button-icon-circular */
 .btn-icon-circular {
-  background-color: var(--color-soft-cloud);
-  color: var(--color-ink);
+  background-color: #f5f5f5;
+  color: #111111;
   border-radius: 9999px;
   width: 40px;
   height: 40px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: transform 0.1s ease, background-color 0.1s ease;
+  border: 1px solid #e5e5e5;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.btn-icon-circular:hover {
+  background-color: #111111;
+  color: #ffffff;
+  border-color: #111111;
 }
 
-.btn-icon-circular:active {
-  transform: scale(0.92);
-}
-
-.search-pill-input {
-  background-color: var(--color-soft-cloud);
-  color: var(--color-ink);
+/* search-pill */
+.search-pill {
+  background-color: #f5f5f5;
+  color: #111111;
+  font-family: "Helvetica Now Text", "Helvetica Neue", Inter, Arial, sans-serif;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
   border-radius: 24px;
-  padding: 8px 16px 8px 40px;
+  padding: 8px 16px;
   height: 40px;
-  font-size: 15px;
+  border: 1.5px solid transparent;
   outline: none;
   transition: all 0.2s ease;
-  border: 1px solid transparent;
+}
+.search-pill:focus {
+  background-color: #ffffff;
+  border: 2px solid #111111;
+  box-shadow: 0 0 0 12px #f5f5f5;
 }
 
-.search-pill-input:focus {
-  background-color: var(--color-canvas);
-  border-color: var(--color-ink);
-  box-shadow: 0 0 0 4px var(--color-soft-cloud);
-}
-
-/* Concentric ring swatch dot */
-.swatch-dot {
-  width: 12px;
-  height: 12px;
+/* filter-chip */
+.filter-chip {
+  background-color: #ffffff;
+  color: #111111;
+  font-family: "Helvetica Now Text Medium", "Helvetica Neue", Inter, Arial, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.5;
+  border: 1px solid #cacacb;
   border-radius: 9999px;
-  transition: all 0.2s ease;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.filter-chip:hover {
+  border-color: #111111;
+}
+.filter-chip.active {
+  background-color: #111111;
+  color: #ffffff;
+  border-color: #111111;
 }
 
-.swatch-dot-active {
-  box-shadow: 0 0 0 2px var(--color-canvas), 0 0 0 4px var(--color-ink);
+/* product-card per DESIGN-AKTC (0 radius, 0 shadow, flat) */
+.product-card {
+  background-color: #ffffff;
+  color: #111111;
+  border-radius: 0px;
+  padding: 0px;
+  border: 1px solid #e5e5e5;
+  transition: border-color 0.15s ease;
+}
+.product-card:hover {
+  border-color: #111111;
 }
 
-/* Hairline borders */
-.border-hairline {
-  border-color: var(--color-hairline);
+.badge-tokens {
+  background-color: #111111;
+  color: #ffffff;
+  border-radius: 9999px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
-.border-hairline-soft {
-  border-color: var(--color-hairline-soft);
-}
-
-/* Smooth minimal scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: var(--color-soft-cloud);
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--color-hairline);
-  border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--color-mute);
+/* Print Styles */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  .resume-print-area {
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
 }

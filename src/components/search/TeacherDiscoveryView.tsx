@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { 
   Search, SlidersHorizontal, Star, Zap, Sparkles, 
-  Calendar, CheckCircle2, ArrowRight, ShieldCheck, Info, X
+  Calendar, CheckCircle2, ArrowRight, ShieldCheck, Info, X, Users, UserPlus
 } from 'lucide-react';
 import { PromoBadge, VerifiedBadge, FilterChip } from '../common/Badge';
 import { Modal } from '../common/Modal';
@@ -23,7 +23,8 @@ export const TeacherDiscoveryView: React.FC = () => {
     setViewedUserId,
     setCurrentTab,
     createSessionRequest,
-    currentUser
+    currentUser,
+    setIsAuthModalOpen
   } = useApp();
 
   // Local filter states
@@ -41,25 +42,45 @@ export const TeacherDiscoveryView: React.FC = () => {
   const [requestGoal, setRequestGoal] = useState('');
   const [requestDate, setRequestDate] = useState('2026-10-05');
   const [requestTime, setRequestTime] = useState('16:00 - 17:00');
-  const [offeredTokens, setOfferedTokens] = useState(20);
+  const [offeredPoints, setOfferedPoints] = useState(20);
   const [requestMessage, setRequestMessage] = useState('');
 
   const categories = ['All', 'Software & AI', 'Design & UX', 'Hardware & Systems', 'Business & Career'];
   const levels = ['All', 'Beginner', 'Intermediate', 'Advanced'];
 
-  // Match teachers and their verified skills
+  // Match real registered teachers and their verified skills
   const teacherList = useMemo(() => {
     const results: { teacher: any; primarySkill: any; rankingScore: number }[] = [];
 
-    allUsers.filter(u => u.role === 'student').forEach(teacher => {
+    // Filter out current user from teachers list
+    const peerTeachers = allUsers.filter(u => u.id !== currentUser?.id);
+
+    peerTeachers.forEach(teacher => {
       const skillsOfTeacher = userSkills.filter(us => us.userId === teacher.id);
       
-      skillsOfTeacher.forEach(skill => {
+      const teacherSkills = skillsOfTeacher.length > 0 ? skillsOfTeacher : [{
+        id: `usk_default_${teacher.id}`,
+        userId: teacher.id,
+        skillId: 'general_peer',
+        skillName: 'General Academic Mentorship',
+        category: 'Software & AI',
+        level: 'Intermediate',
+        yearsExperience: 2,
+        description: teacher.bio || 'Verified campus peer ready to collaborate.',
+        tokenPricePerHour: 15,
+        isVerified: true,
+        verificationScore: 92,
+        tags: ['Peer Mentoring', 'Problem Solving'],
+        totalSessionsTaught: 0,
+        rating: teacher.avgRating || 5.0
+      }];
+
+      teacherSkills.forEach(skill => {
         // Query search
         const matchesQuery = searchQuery === '' || 
           skill.skillName.toLowerCase().includes(searchQuery.toLowerCase()) ||
           teacher.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          skill.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()));
+          skill.tags.some((t: string) => t.toLowerCase().includes(searchQuery.toLowerCase()));
 
         // Category filter
         const matchesCategory = selectedCategory === 'All' || skill.category === selectedCategory;
@@ -68,20 +89,20 @@ export const TeacherDiscoveryView: React.FC = () => {
         const matchesLevel = selectedLevel === 'All' || skill.level === selectedLevel;
 
         // Rating filter
-        const matchesRating = teacher.avgRating >= minRating;
+        const matchesRating = (teacher.avgRating ?? 0) >= minRating;
 
         // Price filter
-        const matchesPrice = skill.tokenPricePerHour <= maxPrice;
+        const matchesPrice = (skill.tokenPricePerHour || 15) <= maxPrice;
 
         // Verified filter
         const matchesVerified = !verifiedOnly || skill.isVerified;
 
         if (matchesQuery && matchesCategory && matchesLevel && matchesRating && matchesPrice && matchesVerified) {
-          const score = calculateTeacherRankingScore(teacher, skill);
+          const score = calculateTeacherRankingScore(teacher, skill as any);
           results.push({
             teacher,
             primarySkill: skill,
-            rankingScore: score
+            rankingScore: score || 85
           });
         }
       });
@@ -90,17 +111,17 @@ export const TeacherDiscoveryView: React.FC = () => {
     // Sorting
     return results.sort((a, b) => {
       if (sortBy === 'ranking') return b.rankingScore - a.rankingScore;
-      if (sortBy === 'price_asc') return a.primarySkill.tokenPricePerHour - b.primarySkill.tokenPricePerHour;
-      if (sortBy === 'price_desc') return b.primarySkill.tokenPricePerHour - a.primarySkill.tokenPricePerHour;
-      if (sortBy === 'rating') return b.teacher.avgRating - a.teacher.avgRating;
+      if (sortBy === 'price_asc') return (a.primarySkill.tokenPricePerHour || 15) - (b.primarySkill.tokenPricePerHour || 15);
+      if (sortBy === 'price_desc') return (b.primarySkill.tokenPricePerHour || 15) - (a.primarySkill.tokenPricePerHour || 15);
+      if (sortBy === 'rating') return (b.teacher.avgRating || 5.0) - (a.teacher.avgRating || 5.0);
       return 0;
     });
-  }, [allUsers, userSkills, searchQuery, selectedCategory, selectedLevel, minRating, maxPrice, verifiedOnly, sortBy, calculateTeacherRankingScore]);
+  }, [allUsers, userSkills, currentUser?.id, searchQuery, selectedCategory, selectedLevel, minRating, maxPrice, verifiedOnly, sortBy, calculateTeacherRankingScore]);
 
   const handleOpenBookingModal = (teacher: any, skill: any) => {
     setSelectedTeacherForBooking({ teacher, skill });
-    setOfferedTokens(skill.tokenPricePerHour);
-    setRequestTopic(`Mentorship & Hands-on Lab on ${skill.skillName}`);
+    setOfferedPoints(skill.tokenPricePerHour || 15);
+    setRequestTopic(`1:1 Mentorship & Hands-on Session on ${skill.skillName}`);
     setIsRequestModalOpen(true);
   };
 
@@ -115,7 +136,7 @@ export const TeacherDiscoveryView: React.FC = () => {
       requestGoal,
       requestDate,
       requestTime,
-      offeredTokens,
+      offeredPoints,
       requestMessage
     );
 
@@ -126,115 +147,116 @@ export const TeacherDiscoveryView: React.FC = () => {
   };
 
   return (
-    <div className="space-y-8 pb-16">
+    <div className="max-w-[1440px] mx-auto px-6 sm:px-8 md:px-12 py-8 space-y-8 pb-16">
       
-      {/* Search Header Banner */}
-      <div className="border-b border-hairline pb-6">
+      {/* ── SEARCH HEADER BANNER ── */}
+      <div className="border-b border-[#111111] pb-6">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
-            <div className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-mute mb-2">
+            <div className="inline-flex items-center gap-2 text-xs font-mono uppercase tracking-widest text-[#707072] mb-2">
               <span>CAMPUS DISCOVERY & RANKING</span>
               <span>•</span>
-              <span className="text-ink">{teacherList.length} Verified Mentors Found</span>
+              <span className="text-[#111111] font-bold">{teacherList.length} Verified Peer Mentors</span>
             </div>
-            <h1 className="font-display text-4xl sm:text-6xl text-ink uppercase tracking-tight">
+            <h1 className="font-display text-4xl sm:text-6xl text-[#111111] uppercase tracking-tight leading-none">
               DISCOVER VERIFIED PEER TEACHERS
             </h1>
-            <p className="text-xs sm:text-sm text-mute font-normal mt-1 max-w-2xl">
-              Search by skill topic, view verification quiz scores, review certificates, and book 1:1 sessions with token escrow protection.
+            <p className="text-xs sm:text-sm text-[#4b4b4d] mt-2 max-w-2xl leading-relaxed">
+              Find verified student mentors, review past session feedback, and request 1:1 sessions with SkillPoints escrow protection.
             </p>
           </div>
 
           <div className="flex items-center gap-3">
             <button
               onClick={() => setShowWeightsInspector(!showWeightsInspector)}
-              className="btn-secondary text-xs py-2.5 px-4 flex items-center gap-2"
-              title="Inspect PRD 3.5 Weighted Ranking Algorithm"
+              className="btn-secondary text-xs py-2.5 px-4 flex items-center gap-2 font-bold uppercase tracking-wider"
+              title="Inspect Weighted Ranking Algorithm"
             >
-              <Sparkles className="w-3.5 h-3.5 text-sale" />
+              <Sparkles className="w-3.5 h-3.5 text-[#007d48]" />
               <span>RANKING ALGORITHM ({sortBy === 'ranking' ? 'ACTIVE' : 'CUSTOM'})</span>
             </button>
           </div>
         </div>
 
         {/* Category Filter Chips Bar */}
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pt-6">
+        <div className="flex items-center gap-2.5 overflow-x-auto pt-6 pb-1">
           {categories.map((cat) => (
-            <FilterChip
+            <button
               key={cat}
-              label={cat}
-              active={selectedCategory === cat}
               onClick={() => setSelectedCategory(cat)}
-            />
+              className={`filter-chip text-xs font-semibold ${selectedCategory === cat ? 'active' : ''}`}
+            >
+              {cat}
+            </button>
           ))}
         </div>
       </div>
 
-      {/* Algorithmic Weights Inspector Dialog (PRD 3.5 Compliance) */}
+      {/* Algorithmic Weights Inspector Dialog */}
       {showWeightsInspector && (
-        <div className="bg-soft-cloud border border-hairline p-5 rounded-none animate-in fade-in">
-          <div className="flex items-center justify-between pb-3 border-b border-hairline">
+        <div className="bg-[#f5f5f5] border-2 border-[#111111] p-6 rounded-none animate-fade-in">
+          <div className="flex items-center justify-between pb-3 border-b border-[#cacacb]">
             <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-ink" />
-              <h4 className="font-semibold text-xs text-ink uppercase tracking-wider">
-                PRD Section 3.5: Multi-Factor Ranking Score Breakdown
+              <Sparkles className="w-4 h-4 text-[#111111]" />
+              <h4 className="font-display text-xl text-[#111111] uppercase tracking-wider">
+                Multi-Factor Ranking Score Weight Breakdown
               </h4>
             </div>
             <button 
               onClick={() => setShowWeightsInspector(false)}
-              className="text-xs text-mute hover:text-ink font-bold"
+              className="text-xs text-[#707072] hover:text-[#111111] font-bold"
             >
-              ✕
+              ✕ CLOSE
             </button>
           </div>
 
-          <p className="text-xs text-mute mt-2">
-            Every teacher result is scored dynamically against the search query using university-verified signals:
+          <p className="text-xs text-[#4b4b4d] mt-2">
+            Every peer result is scored dynamically against the search query using verified campus signals:
           </p>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-4">
-            <div className="bg-canvas border border-hairline p-3">
-              <div className="text-[10px] uppercase font-bold text-mute">Skill Quiz Verification</div>
-              <div className="font-display text-2xl text-ink mt-1">25%</div>
-              <div className="text-[10px] text-mute">MCQ Score & Pass Badge</div>
+            <div className="bg-white border border-[#cacacb] p-3">
+              <div className="text-[10px] uppercase font-bold text-[#707072]">Quiz Verification</div>
+              <div className="font-display text-2xl text-[#111111] mt-1">25%</div>
+              <div className="text-[10px] text-[#707072]">MCQ Score & Pass Badge</div>
             </div>
-            <div className="bg-canvas border border-hairline p-3">
-              <div className="text-[10px] uppercase font-bold text-mute">Topic Peer Rating</div>
-              <div className="font-display text-2xl text-ink mt-1">25%</div>
-              <div className="text-[10px] text-mute">5-Star Learner Reviews</div>
+            <div className="bg-white border border-[#cacacb] p-3">
+              <div className="text-[10px] uppercase font-bold text-[#707072]">Peer Rating</div>
+              <div className="font-display text-2xl text-[#111111] mt-1">25%</div>
+              <div className="text-[10px] text-[#707072]">5-Star Learner Reviews</div>
             </div>
-            <div className="bg-canvas border border-hairline p-3">
-              <div className="text-[10px] uppercase font-bold text-mute">Sessions Taught</div>
-              <div className="font-display text-2xl text-ink mt-1">20%</div>
-              <div className="text-[10px] text-mute">Hours of Proven Mentorship</div>
+            <div className="bg-white border border-[#cacacb] p-3">
+              <div className="text-[10px] uppercase font-bold text-[#707072]">Sessions Taught</div>
+              <div className="font-display text-2xl text-[#111111] mt-1">20%</div>
+              <div className="text-[10px] text-[#707072]">Hours of Mentorship</div>
             </div>
-            <div className="bg-canvas border border-hairline p-3">
-              <div className="text-[10px] uppercase font-bold text-mute">Campus Karma Score</div>
-              <div className="font-display text-2xl text-ink mt-1">15%</div>
-              <div className="text-[10px] text-mute">Milestones & Community Tier</div>
+            <div className="bg-white border border-[#cacacb] p-3">
+              <div className="text-[10px] uppercase font-bold text-[#707072]">SkillPoints (SP)</div>
+              <div className="font-display text-2xl text-[#111111] mt-1">15%</div>
+              <div className="text-[10px] text-[#707072]">Balance & Activity Tier</div>
             </div>
-            <div className="bg-canvas border border-hairline p-3">
-              <div className="text-[10px] uppercase font-bold text-mute">Verified Certificates</div>
-              <div className="font-display text-2xl text-ink mt-1">10%</div>
-              <div className="text-[10px] text-mute">Faculty Approved Credentials</div>
+            <div className="bg-white border border-[#cacacb] p-3">
+              <div className="text-[10px] uppercase font-bold text-[#707072]">Certifications</div>
+              <div className="font-display text-2xl text-[#111111] mt-1">10%</div>
+              <div className="text-[10px] text-[#707072]">Verified Credentials</div>
             </div>
-            <div className="bg-canvas border border-hairline p-3">
-              <div className="text-[10px] uppercase font-bold text-mute">Response Rate Fit</div>
-              <div className="font-display text-2xl text-ink mt-1">5%</div>
-              <div className="text-[10px] text-mute">Fast Responder Badge</div>
+            <div className="bg-white border border-[#cacacb] p-3">
+              <div className="text-[10px] uppercase font-bold text-[#707072]">Response Speed</div>
+              <div className="font-display text-2xl text-[#111111] mt-1">5%</div>
+              <div className="text-[10px] text-[#707072]">Fast Responder Badge</div>
             </div>
           </div>
         </div>
       )}
 
       {/* Main Grid: Left Filter Sidebar + Right 3-Up Product Card Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-start">
         
-        {/* Left Filter Sidebar (DESIGN-AKTC Section 498) */}
+        {/* Left Filter Sidebar */}
         <aside className="space-y-6">
-          <div className="bg-canvas border border-hairline p-5 space-y-6">
-            <div className="flex items-center justify-between pb-3 border-b border-hairline">
-              <span className="font-semibold text-xs text-ink uppercase tracking-wider flex items-center gap-1.5">
+          <div className="bg-white border border-[#e5e5e5] p-5 space-y-6">
+            <div className="flex items-center justify-between pb-3 border-b border-[#e5e5e5]">
+              <span className="font-bold text-xs text-[#111111] uppercase tracking-wider flex items-center gap-1.5">
                 <SlidersHorizontal className="w-3.5 h-3.5" />
                 Refine Search
               </span>
@@ -246,7 +268,7 @@ export const TeacherDiscoveryView: React.FC = () => {
                   setVerifiedOnly(false);
                   setSearchQuery('');
                 }}
-                className="text-[11px] text-mute hover:text-ink font-semibold"
+                className="text-[11px] text-[#707072] hover:text-[#111111] font-semibold"
               >
                 Reset
               </button>
@@ -254,24 +276,24 @@ export const TeacherDiscoveryView: React.FC = () => {
 
             {/* Keyword Search */}
             <div>
-              <label className="text-[11px] font-bold uppercase text-mute tracking-wider block mb-2">
+              <label className="text-[11px] font-bold uppercase text-[#707072] tracking-wider block mb-2">
                 Topic / Keyword
               </label>
               <div className="relative">
-                <Search className="w-4 h-4 text-mute absolute left-3 top-1/2 -translate-y-1/2" />
+                <Search className="w-4 h-4 text-[#707072] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
                   placeholder="e.g. PyTorch, Figma, K8s..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="search-pill-input w-full text-xs"
+                  className="w-full bg-[#f5f5f5] text-[#111111] text-xs pl-9 pr-3 py-2 rounded-lg border border-[#e5e5e5] focus:bg-white focus:border-[#111111] outline-none"
                 />
               </div>
             </div>
 
             {/* Skill Level */}
             <div>
-              <label className="text-[11px] font-bold uppercase text-mute tracking-wider block mb-2">
+              <label className="text-[11px] font-bold uppercase text-[#707072] tracking-wider block mb-2">
                 Skill Level
               </label>
               <div className="flex flex-wrap gap-1.5">
@@ -279,8 +301,8 @@ export const TeacherDiscoveryView: React.FC = () => {
                   <button
                     key={l}
                     onClick={() => setSelectedLevel(l)}
-                    className={`px-3 py-1.5 rounded-full text-xs font-semibold ${
-                      selectedLevel === l ? 'bg-ink text-on-primary' : 'bg-soft-cloud text-ink hover:bg-hairline-soft'
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                      selectedLevel === l ? 'bg-[#111111] text-white' : 'bg-[#f5f5f5] text-[#111111] hover:bg-[#e5e5e5]'
                     }`}
                   >
                     {l}
@@ -291,13 +313,13 @@ export const TeacherDiscoveryView: React.FC = () => {
 
             {/* Sort Dropdown */}
             <div>
-              <label className="text-[11px] font-bold uppercase text-mute tracking-wider block mb-2">
+              <label className="text-[11px] font-bold uppercase text-[#707072] tracking-wider block mb-2">
                 Sort Order
               </label>
               <select
                 value={sortBy}
                 onChange={(e: any) => setSortBy(e.target.value)}
-                className="w-full bg-soft-cloud border border-hairline text-xs font-semibold text-ink px-3 py-2 rounded-md focus:outline-none cursor-pointer"
+                className="w-full bg-[#f5f5f5] border border-[#e5e5e5] text-xs font-semibold text-[#111111] px-3 py-2 rounded-lg focus:outline-none cursor-pointer"
               >
                 <option value="ranking">Algorithmic Best Match (Score)</option>
                 <option value="price_asc">Price: Low to High</option>
@@ -308,9 +330,9 @@ export const TeacherDiscoveryView: React.FC = () => {
 
             {/* Max Price Slider */}
             <div>
-              <div className="flex items-center justify-between text-[11px] font-bold uppercase text-mute tracking-wider mb-2">
-                <span>Max Token Rate</span>
-                <span className="text-ink font-semibold">{maxPrice} ⚡ / hr</span>
+              <div className="flex items-center justify-between text-[11px] font-bold uppercase text-[#707072] tracking-wider mb-2">
+                <span>Max Hourly Rate</span>
+                <span className="text-[#111111] font-mono font-bold">{maxPrice} ⚡ SP/hr</span>
               </div>
               <input
                 type="range"
@@ -319,20 +341,20 @@ export const TeacherDiscoveryView: React.FC = () => {
                 step="5"
                 value={maxPrice}
                 onChange={(e) => setMaxPrice(Number(e.target.value))}
-                className="w-full accent-ink cursor-pointer"
+                className="w-full accent-[#111111] cursor-pointer"
               />
             </div>
 
             {/* Verified Only Checkbox */}
-            <div className="pt-3 border-t border-hairline-soft">
+            <div className="pt-3 border-t border-[#e5e5e5]">
               <label className="flex items-center gap-2.5 cursor-pointer select-none">
                 <input
                   type="checkbox"
                   checked={verifiedOnly}
                   onChange={(e) => setVerifiedOnly(e.target.checked)}
-                  className="w-4 h-4 accent-ink rounded cursor-pointer"
+                  className="w-4 h-4 accent-[#111111] rounded cursor-pointer"
                 />
-                <span className="text-xs font-semibold text-ink">
+                <span className="text-xs font-semibold text-[#111111]">
                   Verified by Challenge Only
                 </span>
               </label>
@@ -343,20 +365,17 @@ export const TeacherDiscoveryView: React.FC = () => {
         {/* Right Product Card Grid (3-Up on Desktop) */}
         <div className="lg:col-span-3">
           {teacherList.length === 0 ? (
-            <div className="bg-soft-cloud border border-hairline p-12 text-center">
-              <h3 className="font-display text-3xl text-ink uppercase">No Mentors Matched Filters</h3>
-              <p className="text-xs text-mute mt-2">
-                Try widening your price range or clearing keyword filters to discover more campus teachers.
+            <div className="bg-[#f5f5f5] border border-[#e5e5e5] p-12 text-center space-y-4">
+              <Users className="w-12 h-12 text-[#707072] mx-auto" />
+              <h3 className="font-display text-3xl text-[#111111] uppercase">No Peer Mentors Found</h3>
+              <p className="text-xs text-[#707072] max-w-md mx-auto leading-relaxed">
+                All pre-loaded demo accounts have been purged. Create another student profile in another browser tab to simulate live peer discovery!
               </p>
               <button
-                onClick={() => {
-                  setSelectedLevel('All');
-                  setSelectedCategory('All');
-                  setSearchQuery('');
-                }}
-                className="btn-primary mt-4 text-xs"
+                onClick={() => setIsAuthModalOpen(true)}
+                className="btn-primary text-xs uppercase font-bold"
               >
-                RESET ALL FILTERS
+                Create Another Student Profile
               </button>
             </div>
           ) : (
@@ -364,82 +383,68 @@ export const TeacherDiscoveryView: React.FC = () => {
               {teacherList.map(({ teacher, primarySkill, rankingScore }) => (
                 <div
                   key={`${teacher.id}_${primarySkill.id}`}
-                  className="bg-canvas border border-hairline flex flex-col justify-between group hover:border-ink transition-all"
+                  className="product-card flex flex-col justify-between group"
                 >
-                  {/* Photo area on soft-cloud */}
-                  <div className="relative aspect-square w-full bg-soft-cloud overflow-hidden">
+                  {/* Photo area on soft-cloud 1:1 Aspect Ratio */}
+                  <div className="relative aspect-square w-full bg-[#f5f5f5] overflow-hidden">
                     <img
                       src={teacher.avatar}
                       alt={teacher.name}
-                      className="w-full h-full object-cover object-center group-hover:scale-102 transition-transform duration-300"
+                      className="w-full h-full object-cover object-center"
                     />
 
                     {/* Top badges */}
-                    <div className="absolute top-3 left-3 flex flex-col gap-1">
-                      {primarySkill.isVerified && (
-                        <VerifiedBadge score={primarySkill.verificationScore} size="sm" />
-                      )}
-                      <PromoBadge label={primarySkill.level} />
+                    <div className="absolute top-3 left-3 bg-white/95 text-[#111111] text-[10px] font-bold uppercase px-2.5 py-1 rounded-full border border-[#cacacb]">
+                      Verified Peer
                     </div>
 
                     {/* Match Score */}
-                    <div className="absolute top-3 right-3 bg-canvas px-2.5 py-1 rounded-full border border-hairline text-xs font-bold text-ink flex items-center gap-1 shadow-xs">
-                      <Sparkles className="w-3.5 h-3.5 text-sale" />
+                    <div className="absolute top-3 right-3 bg-white/95 px-2.5 py-1 rounded-full border border-[#cacacb] text-[10px] font-mono font-bold text-[#007d48] flex items-center gap-1 shadow-xs">
+                      <Sparkles className="w-3 h-3 text-emerald-600" />
                       <span>{rankingScore}% Match</span>
                     </div>
                   </div>
 
                   {/* Metadata area */}
-                  <div className="p-5 flex-1 flex flex-col justify-between">
+                  <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
                     <div>
-                      {/* Department Tag */}
-                      <div className="text-[10px] font-bold uppercase tracking-wider text-mute mb-1">
+                      {/* Swatch dots */}
+                      <div className="flex items-center gap-1.5 pb-1">
+                        <span className="w-2.5 h-2.5 rounded-full bg-[#111111]" />
+                        <span className="w-2.5 h-2.5 rounded-full bg-[#707072]" />
+                        <span className="w-2.5 h-2.5 rounded-full bg-[#007d48]" />
+                        <span className="text-[10px] font-mono text-[#007d48] font-bold ml-auto">
+                          {teacher.reviewCount && teacher.reviewCount > 0 ? `★ ${teacher.avgRating.toFixed(1)}` : '★ 0.0 (New)'}
+                        </span>
+                      </div>
+
+                      <div className="text-[10px] font-mono uppercase text-[#707072]">
                         {teacher.department.split('&')[0]}
                       </div>
 
-                      <div className="flex items-start justify-between gap-2">
-                        <h3 
-                          onClick={() => {
-                            setViewedUserId(teacher.id);
-                            setCurrentTab('portfolio');
-                          }}
-                          className="font-display text-2xl text-ink uppercase tracking-tight hover:underline cursor-pointer leading-tight"
-                        >
-                          {teacher.name}
-                        </h3>
-                        <div className="flex items-center gap-1 text-xs font-bold text-ink shrink-0">
-                          <Star className="w-3.5 h-3.5 fill-ink text-ink" />
-                          <span>{primarySkill.rating || teacher.avgRating}</span>
-                        </div>
-                      </div>
+                      <h3 
+                        onClick={() => {
+                          setViewedUserId(teacher.id);
+                          setCurrentTab('portfolio');
+                        }}
+                        className="font-bold text-sm text-[#111111] hover:underline cursor-pointer truncate mt-0.5"
+                      >
+                        {teacher.name}
+                      </h3>
 
-                      <p className="text-xs font-semibold text-charcoal mt-1 line-clamp-1">
+                      <p className="text-xs font-semibold text-[#39393b] truncate mt-0.5">
                         {primarySkill.skillName}
                       </p>
 
-                      <p className="text-xs text-mute mt-2 line-clamp-2 leading-relaxed">
+                      <p className="text-xs text-[#4b4b4d] mt-1.5 line-clamp-2 leading-relaxed">
                         {primarySkill.description || teacher.bio}
                       </p>
-
-                      {/* Tag Pills */}
-                      <div className="flex flex-wrap gap-1 mt-3">
-                        {primarySkill.tags.slice(0, 3).map((tag: string) => (
-                          <span key={tag} className="px-2 py-0.5 bg-soft-cloud text-ink text-[10px] font-medium rounded-full">
-                            #{tag}
-                          </span>
-                        ))}
-                      </div>
                     </div>
 
                     {/* Footer / Price & Request CTA */}
-                    <div className="mt-5 pt-4 border-t border-hairline-soft flex items-center justify-between gap-2">
-                      <div>
-                        <div className="text-[10px] uppercase font-bold text-mute">Price</div>
-                        <div className="text-sm font-bold text-ink flex items-center gap-1">
-                          <Zap className="w-3.5 h-3.5 fill-ink" />
-                          <span>{primarySkill.tokenPricePerHour} ⚡</span>
-                          <span className="text-[11px] font-normal text-mute">/ hr</span>
-                        </div>
+                    <div className="pt-3 border-t border-[#f5f5f5] flex items-center justify-between gap-2">
+                      <div className="text-xs font-mono font-bold text-[#111111]">
+                        ⚡ {primarySkill.tokenPricePerHour || 15} SP/hr
                       </div>
 
                       <div className="flex items-center gap-1.5">
@@ -448,16 +453,16 @@ export const TeacherDiscoveryView: React.FC = () => {
                             setViewedUserId(teacher.id);
                             setCurrentTab('portfolio');
                           }}
-                          className="btn-secondary text-xs py-2 px-3"
+                          className="btn-secondary !py-1 !px-2.5 text-xs"
                           title="View Public Portfolio"
                         >
-                          PROFILE
+                          Profile
                         </button>
                         <button
                           onClick={() => handleOpenBookingModal(teacher, primarySkill)}
-                          className="btn-primary text-xs py-2 px-4"
+                          className="btn-primary !py-1 !px-3.5 text-xs font-bold"
                         >
-                          REQUEST
+                          Request
                         </button>
                       </div>
                     </div>
@@ -469,18 +474,18 @@ export const TeacherDiscoveryView: React.FC = () => {
         </div>
       </div>
 
-      {/* SESSION BOOKING REQUEST MODAL (PRD 3.6) */}
+      {/* SESSION BOOKING REQUEST MODAL */}
       {isRequestModalOpen && selectedTeacherForBooking && (
         <Modal
           isOpen={isRequestModalOpen}
           onClose={() => setIsRequestModalOpen(false)}
-          title={`REQUEST SESSION WITH ${selectedTeacherForBooking.teacher.name.toUpperCase()}`}
-          subtitle={`Skill: ${selectedTeacherForBooking.skill.skillName} • Rate: ${selectedTeacherForBooking.skill.tokenPricePerHour} ⚡/hr`}
+          title={`REQUEST 1:1 SESSION WITH ${selectedTeacherForBooking.teacher.name.toUpperCase()}`}
+          subtitle={`Skill: ${selectedTeacherForBooking.skill.skillName} • Rate: ${selectedTeacherForBooking.skill.tokenPricePerHour || 15} SP/hr`}
           maxWidth="lg"
         >
           <form onSubmit={handleSendRequestSubmit} className="space-y-4 text-left">
             <div>
-              <label className="text-[11px] font-bold uppercase text-mute tracking-wider block mb-1">
+              <label className="text-[11px] font-bold uppercase text-[#707072] tracking-wider block mb-1">
                 Session Topic & Scope
               </label>
               <input
@@ -489,12 +494,12 @@ export const TeacherDiscoveryView: React.FC = () => {
                 value={requestTopic}
                 onChange={(e) => setRequestTopic(e.target.value)}
                 placeholder="e.g. Fine-tuning PyTorch LLM with LoRA"
-                className="w-full bg-soft-cloud border border-hairline px-3.5 py-2.5 text-xs text-ink rounded-none focus:outline-none focus:border-ink font-medium"
+                className="w-full bg-[#f5f5f5] border border-[#e5e5e5] px-3.5 py-2.5 text-xs text-[#111111] rounded-lg focus:bg-white focus:border-[#111111] outline-none"
               />
             </div>
 
             <div>
-              <label className="text-[11px] font-bold uppercase text-mute tracking-wider block mb-1">
+              <label className="text-[11px] font-bold uppercase text-[#707072] tracking-wider block mb-1">
                 Your Learning Goal / What You Hope to Achieve
               </label>
               <textarea
@@ -503,13 +508,13 @@ export const TeacherDiscoveryView: React.FC = () => {
                 value={requestGoal}
                 onChange={(e) => setRequestGoal(e.target.value)}
                 placeholder="e.g. Understand LoRA hyperparams and debug training loss curve on GPU"
-                className="w-full bg-soft-cloud border border-hairline px-3.5 py-2.5 text-xs text-ink rounded-none focus:outline-none focus:border-ink font-medium"
+                className="w-full bg-[#f5f5f5] border border-[#e5e5e5] px-3.5 py-2.5 text-xs text-[#111111] rounded-lg focus:bg-white focus:border-[#111111] outline-none"
               />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-[11px] font-bold uppercase text-mute tracking-wider block mb-1">
+                <label className="text-[11px] font-bold uppercase text-[#707072] tracking-wider block mb-1">
                   Preferred Date
                 </label>
                 <input
@@ -517,18 +522,18 @@ export const TeacherDiscoveryView: React.FC = () => {
                   required
                   value={requestDate}
                   onChange={(e) => setRequestDate(e.target.value)}
-                  className="w-full bg-soft-cloud border border-hairline px-3 py-2 text-xs text-ink rounded-none focus:outline-none"
+                  className="w-full bg-[#f5f5f5] border border-[#e5e5e5] px-3 py-2 text-xs text-[#111111] rounded-lg focus:bg-white outline-none"
                 />
               </div>
 
               <div>
-                <label className="text-[11px] font-bold uppercase text-mute tracking-wider block mb-1">
+                <label className="text-[11px] font-bold uppercase text-[#707072] tracking-wider block mb-1">
                   Preferred Slot
                 </label>
                 <select
                   value={requestTime}
                   onChange={(e) => setRequestTime(e.target.value)}
-                  className="w-full bg-soft-cloud border border-hairline px-3 py-2 text-xs text-ink rounded-none focus:outline-none cursor-pointer"
+                  className="w-full bg-[#f5f5f5] border border-[#e5e5e5] px-3 py-2 text-xs text-[#111111] rounded-lg focus:bg-white outline-none cursor-pointer"
                 >
                   <option value="16:00 - 17:00">16:00 - 17:00 IST</option>
                   <option value="17:00 - 18:00">17:00 - 18:00 IST</option>
@@ -539,58 +544,58 @@ export const TeacherDiscoveryView: React.FC = () => {
             </div>
 
             <div>
-              <div className="flex items-center justify-between text-[11px] font-bold uppercase text-mute tracking-wider mb-1">
-                <span>Offered Tokens (Held in Escrow Upon Acceptance)</span>
-                <span className="text-ink font-bold">{offeredTokens} ⚡</span>
+              <div className="flex items-center justify-between text-[11px] font-bold uppercase text-[#707072] tracking-wider mb-1">
+                <span>Offered SkillPoints (Held in Escrow Upon Acceptance)</span>
+                <span className="text-[#111111] font-bold font-mono">{offeredPoints} ⚡ SP</span>
               </div>
               <input
                 type="number"
                 min="5"
                 max="100"
-                value={offeredTokens}
-                onChange={(e) => setOfferedTokens(Number(e.target.value))}
-                className="w-full bg-soft-cloud border border-hairline px-3.5 py-2 text-xs text-ink rounded-none focus:outline-none"
+                value={offeredPoints}
+                onChange={(e) => setOfferedPoints(Number(e.target.value))}
+                className="w-full bg-[#f5f5f5] border border-[#e5e5e5] px-3.5 py-2 text-xs text-[#111111] rounded-lg focus:bg-white outline-none font-mono"
               />
-              <div className="mt-1 text-[10px] text-mute flex items-center justify-between">
-                <span>Your Current Balance: {currentUser.walletBalance} ⚡</span>
-                <span className="text-success">Escrow released only after session ends</span>
+              <div className="mt-1 text-[10px] text-[#707072] flex items-center justify-between font-mono">
+                <span>Your Current Balance: {currentUser.skillpoints || currentUser.walletBalance} SP</span>
+                <span className="text-[#007d48]">Escrow released only after session ends</span>
               </div>
             </div>
 
             <div>
-              <label className="text-[11px] font-bold uppercase text-mute tracking-wider block mb-1">
-                Note for Teacher
+              <label className="text-[11px] font-bold uppercase text-[#707072] tracking-wider block mb-1">
+                Note for Mentor
               </label>
               <textarea
                 rows={2}
                 value={requestMessage}
                 onChange={(e) => setRequestMessage(e.target.value)}
-                placeholder="Share any GitHub repo links or code hurdles beforehand..."
-                className="w-full bg-soft-cloud border border-hairline px-3.5 py-2 text-xs text-ink rounded-none focus:outline-none"
+                placeholder="Share any GitHub repo links or questions beforehand..."
+                className="w-full bg-[#f5f5f5] border border-[#e5e5e5] px-3.5 py-2 text-xs text-[#111111] rounded-lg focus:bg-white outline-none"
               />
             </div>
 
             {/* Escrow Safeguard Warning */}
-            <div className="bg-soft-cloud border border-hairline p-3 text-[11px] text-mute flex items-start gap-2">
-              <ShieldCheck className="w-4 h-4 text-success shrink-0 mt-0.5" />
+            <div className="bg-[#f5f5f5] border border-[#e5e5e5] p-3 text-[11px] text-[#4b4b4d] flex items-start gap-2 rounded-lg">
+              <ShieldCheck className="w-4 h-4 text-[#007d48] shrink-0 mt-0.5" />
               <span>
-                <strong>Escrow Guarantee:</strong> {offeredTokens} tokens will be held securely in escrow once accepted. If the teacher does not show up, tokens are automatically refunded to your wallet.
+                <strong>Escrow Guarantee:</strong> {offeredPoints} SkillPoints will be held securely in escrow once accepted. If the peer does not show up, points are automatically refunded to your wallet.
               </span>
             </div>
 
-            <div className="pt-3 border-t border-hairline flex items-center justify-end gap-2">
+            <div className="pt-3 border-t border-[#e5e5e5] flex items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setIsRequestModalOpen(false)}
-                className="btn-secondary text-xs py-2.5 px-5"
+                className="btn-secondary !py-2.5 !px-5 text-xs font-bold uppercase"
               >
-                CANCEL
+                Cancel
               </button>
               <button
                 type="submit"
-                className="btn-primary text-xs py-2.5 px-6"
+                className="btn-primary !py-2.5 !px-6 text-xs font-bold uppercase"
               >
-                <span>SEND REQUEST & ESCROW HOLD</span>
+                <span>Send Request & Hold Escrow</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>

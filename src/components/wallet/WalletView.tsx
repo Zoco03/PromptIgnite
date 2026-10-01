@@ -28,19 +28,19 @@ export const WalletView: React.FC = () => {
   };
 
   return (
-    <div className="space-y-10 pb-16">
+    <div className="max-w-[1440px] mx-auto px-6 sm:px-8 md:px-12 py-8 space-y-10 pb-16">
       
       {/* Header */}
       <div className="border-b border-hairline pb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <div className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-mute mb-2">
-            <span>CAMPUS CLOSED TOKEN ECONOMY & LEDGER (PRD 3.12)</span>
+            <span>CAMPUS SKILLPOINTS LEDGER (PRD 3.12)</span>
           </div>
           <h1 className="font-display text-4xl sm:text-6xl text-ink uppercase tracking-tight">
             WALLET & TRANSACTION LEDGER
           </h1>
           <p className="text-xs sm:text-sm text-mute font-normal mt-1 max-w-2xl">
-            Append-only idempotent financial ledger for university peer learning. Tokens are strictly non-monetary, held in escrow during booked sessions, and released upon confirmed peer completion.
+            Append-only financial ledger for university peer learning. SkillPoints are strictly non-monetary, held in escrow during booked sessions, and released upon confirmed peer completion.
           </p>
         </div>
 

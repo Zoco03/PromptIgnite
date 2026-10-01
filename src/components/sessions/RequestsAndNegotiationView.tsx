@@ -66,15 +66,17 @@ export const RequestsAndNegotiationView: React.FC = () => {
   };
 
   const handleJoinLive = (requestId: string) => {
-    const live = liveSessions.find(s => s.requestId === requestId);
+    const live = liveSessions.find(s => s.requestId === requestId || s.id === requestId);
     if (live) {
       setActiveLiveSessionId(live.id);
-      setCurrentTab('live_room');
+    } else {
+      setActiveLiveSessionId(requestId);
     }
+    setCurrentTab('live_room');
   };
 
   return (
-    <div className="space-y-8 pb-16">
+    <div className="max-w-[1440px] mx-auto px-6 sm:px-8 md:px-12 py-8 space-y-8 pb-16">
       
       {/* Header */}
       <div className="border-b border-hairline pb-6 flex flex-col md:flex-row md:items-end justify-between gap-4">

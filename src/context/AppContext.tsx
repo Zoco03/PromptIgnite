@@ -1,16 +1,16 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { 
   User, Skill, UserSkill, Certificate, SessionRequest, 
   LiveSession, Workshop, Conversation, Message, Transaction, 
   Goal, StudyLog, Notification, LeaderboardEntry, SkillGapData, 
-  Dispute, Review, WhiteboardElement, InSessionMessage, CounterProposal, RequestStatus
+  Dispute, Review, WhiteboardElement, InSessionMessage, CounterProposal, RequestStatus, SocialLinks
 } from '../types';
 import { 
   INITIAL_USERS, INITIAL_SKILLS, INITIAL_USER_SKILLS, 
-  INITIAL_CERTIFICATES, INITIAL_SESSION_REQUESTS, INITIAL_LIVE_SESSIONS, 
+  INITIAL_CERTIFICATES, INITIAL_REQUESTS, INITIAL_LIVE_SESSIONS, 
   INITIAL_WORKSHOPS, INITIAL_CONVERSATIONS, INITIAL_MESSAGES, 
   INITIAL_TRANSACTIONS, INITIAL_GOALS, INITIAL_STUDY_LOGS, 
-  INITIAL_NOTIFICATIONS, INITIAL_LEADERBOARD, INITIAL_SKILL_GAPS, 
+  INITIAL_NOTIFICATIONS, INITIAL_SKILL_GAPS, 
   INITIAL_DISPUTES, INITIAL_REVIEWS 
 } from '../data/mockData';
 
@@ -18,6 +18,7 @@ export type NavigationTab =
   | 'dashboard'
   | 'search'
   | 'portfolio'
+  | 'resume'
   | 'skills'
   | 'sessions'
   | 'live_room'
@@ -34,6 +35,15 @@ export type NavigationTab =
   | 'dept_analytics';
 
 interface AppContextType {
+  // Auth & Session
+  isLoggedIn: boolean;
+  isAuthModalOpen: boolean;
+  setIsAuthModalOpen: (open: boolean) => void;
+  loginUser: (email: string, password?: string) => boolean;
+  registerUser: (userData: Partial<User> & { avatar?: string; socials?: SocialLinks }) => void;
+  logoutUser: () => void;
+  updateUserProfile: (data: Partial<User>) => void;
+
   // Navigation & Active State
   currentTab: NavigationTab;
   setCurrentTab: (tab: NavigationTab) => void;
@@ -55,7 +65,7 @@ interface AppContextType {
   
   // Certificates
   certificates: Certificate[];
-  uploadCertificate: (skillName: string, title: string, issuer: string, fileUrl: string) => void;
+  uploadCertificate: (skillName: string, title: string, issuer: string, fileUrl: string, fileType?: 'image' | 'pdf') => void;
   adminReviewCertificate: (certId: string, status: 'Verified' | 'Rejected', reason?: string) => void;
   
   // Search & Discovery
@@ -107,16 +117,16 @@ interface AppContextType {
   transactions: Transaction[];
   grantStarterTokens: (userId: string, amount: number, reason: string) => void;
   
-  // Study Tracker & Pomodoro
+  // Study Tracker & Pomodoro / Camera Focus
   studyLogs: StudyLog[];
-  logStudySession: (skillName: string, durationMinutes: number, type: 'self_pomodoro' | 'session_learned' | 'session_taught', notes?: string) => void;
+  logStudySession: (skillName: string, durationMinutes: number, type: 'self_pomodoro' | 'camera_focus' | 'session_learned' | 'session_taught', notes?: string, focusScore?: number, distractionCount?: number, tokensAwarded?: number) => void;
   
   // Goals & Milestones
   goals: Goal[];
   createGoal: (title: string, skillName: string, targetDate: string, milestones: string[]) => void;
   toggleMilestone: (goalId: string, milestoneId: string) => void;
   
-  // Leaderboard & Karma
+  // Leaderboard & Tokens
   leaderboard: LeaderboardEntry[];
   
   // Insights & Dept Gaps
@@ -137,85 +147,214 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+// Multi-tab sync BroadcastChannel
+const syncChannel = typeof window !== 'undefined' && 'BroadcastChannel' in window
+  ? new BroadcastChannel('skillswap_sync_channel')
+  : null;
+
+const DEFAULT_GUEST_USER: User = {
+  id: 'usr_guest',
+  name: 'Student Guest',
+  email: 'student@campus.edu',
+  role: 'student',
+  department: 'Computer Science & Engineering',
+  year: '1st Year Undergraduate',
+  bio: 'Campus student exploring peer learning.',
+  avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80',
+  timezone: 'IST (UTC+5:30)',
+  skillpoints: 50,
+  tokens: 50,
+  karma: 50,
+  leaderboardRank: 1,
+  walletBalance: 50,
+  escrowBalance: 0,
+  totalHoursTaught: 0,
+  totalHoursLearned: 0,
+  sessionsCompletedCount: 0,
+  avgRating: 0.0,
+  reviewCount: 0,
+  isVerifiedStudent: true,
+  joinedDate: '2026-01-01',
+  badges: [
+    {
+      id: 'b_welcome',
+      name: 'Campus Pioneer',
+      icon: '🎓',
+      description: 'Joined SkillSwap Campus Network',
+      dateEarned: '2026-01-01',
+      category: 'community'
+    },
+    {
+      id: 'b_early',
+      name: 'Early Adopter',
+      icon: '⚡',
+      description: 'First Semester Founding Member',
+      dateEarned: '2026-01-01',
+      category: 'community'
+    }
+  ]
+};
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // Auth state
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
+    return localStorage.getItem('skillswap_logged_in') === 'true';
+  });
+
   // Navigation & User State
   const [currentTab, setCurrentTab] = useState<NavigationTab>('dashboard');
+  
   const [allUsers, setAllUsers] = useState<User[]>(() => {
-    const saved = localStorage.getItem('skillswap_users');
-    return saved ? JSON.parse(saved) : INITIAL_USERS;
+    try {
+      const saved = localStorage.getItem('skillswap_users');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Filter out any mock accounts (e.g. u1, u2, u3, Meera Patel, Priya Verma, Rohan Gupta)
+        const realUsers = parsed.filter((u: any) => 
+          u.id.startsWith('usr_') && 
+          u.name !== 'Meera Patel' && 
+          u.name !== 'Priya Verma' && 
+          u.name !== 'Rohan Gupta' &&
+          u.name !== 'Alex Chen' &&
+          u.name !== 'Sara Khan'
+        );
+        return realUsers;
+      }
+      return INITIAL_USERS;
+    } catch {
+      return INITIAL_USERS;
+    }
   });
-  const [currentUserId, setCurrentUserId] = useState<string>('usr_aarav');
-  const [viewedUserId, setViewedUserId] = useState<string>('usr_meera');
 
-  const currentUser = allUsers.find(u => u.id === currentUserId) || allUsers[0];
+  const [currentUserId, setCurrentUserId] = useState<string>(() => {
+    return sessionStorage.getItem('skillswap_tab_user_id') || localStorage.getItem('skillswap_current_user_id') || '';
+  });
+
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(() => {
+    return !isLoggedIn || !currentUserId;
+  });
+
+  const [viewedUserId, setViewedUserId] = useState<string>('');
+
+  const currentUser: User = allUsers.find(u => u.id === currentUserId) || (allUsers.length > 0 ? allUsers[0] : DEFAULT_GUEST_USER);
 
   // Domain State with LocalStorage Persistence
   const [skills, setSkills] = useState<Skill[]>(() => {
-    const saved = localStorage.getItem('skillswap_skills');
-    return saved ? JSON.parse(saved) : INITIAL_SKILLS;
+    try {
+      const saved = localStorage.getItem('skillswap_skills');
+      return saved ? JSON.parse(saved) : INITIAL_SKILLS;
+    } catch {
+      return INITIAL_SKILLS;
+    }
   });
 
   const [userSkills, setUserSkills] = useState<UserSkill[]>(() => {
-    const saved = localStorage.getItem('skillswap_user_skills');
-    return saved ? JSON.parse(saved) : INITIAL_USER_SKILLS;
+    try {
+      const saved = localStorage.getItem('skillswap_user_skills');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.filter((s: any) => 
+          s.userId.startsWith('usr_') && 
+          !['u1','u2','u3','u4','u5','usr_1','usr_2','usr_3','usr_4','usr_5'].includes(s.userId)
+        );
+      }
+      return INITIAL_USER_SKILLS;
+    } catch {
+      return INITIAL_USER_SKILLS;
+    }
   });
 
   const [certificates, setCertificates] = useState<Certificate[]>(() => {
-    const saved = localStorage.getItem('skillswap_certificates');
-    return saved ? JSON.parse(saved) : INITIAL_CERTIFICATES;
+    try {
+      const saved = localStorage.getItem('skillswap_certificates');
+      return saved ? JSON.parse(saved) : INITIAL_CERTIFICATES;
+    } catch {
+      return INITIAL_CERTIFICATES;
+    }
   });
 
   const [sessionRequests, setSessionRequests] = useState<SessionRequest[]>(() => {
-    const saved = localStorage.getItem('skillswap_requests');
-    return saved ? JSON.parse(saved) : INITIAL_SESSION_REQUESTS;
+    try {
+      const saved = localStorage.getItem('skillswap_requests');
+      return saved ? JSON.parse(saved) : INITIAL_REQUESTS;
+    } catch {
+      return INITIAL_REQUESTS;
+    }
   });
 
   const [liveSessions, setLiveSessions] = useState<LiveSession[]>(() => {
-    const saved = localStorage.getItem('skillswap_live_sessions');
-    return saved ? JSON.parse(saved) : INITIAL_LIVE_SESSIONS;
+    try {
+      const saved = localStorage.getItem('skillswap_live_sessions');
+      return saved ? JSON.parse(saved) : INITIAL_LIVE_SESSIONS;
+    } catch {
+      return INITIAL_LIVE_SESSIONS;
+    }
   });
 
   const [workshops, setWorkshops] = useState<Workshop[]>(() => {
-    const saved = localStorage.getItem('skillswap_workshops');
-    return saved ? JSON.parse(saved) : INITIAL_WORKSHOPS;
+    try {
+      const saved = localStorage.getItem('skillswap_workshops');
+      return saved ? JSON.parse(saved) : INITIAL_WORKSHOPS;
+    } catch {
+      return INITIAL_WORKSHOPS;
+    }
   });
 
   const [conversations, setConversations] = useState<Conversation[]>(() => {
-    const saved = localStorage.getItem('skillswap_conversations');
-    return saved ? JSON.parse(saved) : INITIAL_CONVERSATIONS;
+    try {
+      const saved = localStorage.getItem('skillswap_conversations');
+      return saved ? JSON.parse(saved) : INITIAL_CONVERSATIONS;
+    } catch {
+      return INITIAL_CONVERSATIONS;
+    }
   });
 
   const [messages, setMessages] = useState<Message[]>(() => {
-    const saved = localStorage.getItem('skillswap_messages');
-    return saved ? JSON.parse(saved) : INITIAL_MESSAGES;
+    try {
+      const saved = localStorage.getItem('skillswap_messages');
+      return saved ? JSON.parse(saved) : INITIAL_MESSAGES;
+    } catch {
+      return INITIAL_MESSAGES;
+    }
   });
 
   const [transactions, setTransactions] = useState<Transaction[]>(() => {
-    const saved = localStorage.getItem('skillswap_transactions');
-    return saved ? JSON.parse(saved) : INITIAL_TRANSACTIONS;
+    try {
+      const saved = localStorage.getItem('skillswap_transactions');
+      return saved ? JSON.parse(saved) : INITIAL_TRANSACTIONS;
+    } catch {
+      return INITIAL_TRANSACTIONS;
+    }
   });
 
   const [goals, setGoals] = useState<Goal[]>(() => {
-    const saved = localStorage.getItem('skillswap_goals');
-    return saved ? JSON.parse(saved) : INITIAL_GOALS;
+    try {
+      const saved = localStorage.getItem('skillswap_goals');
+      return saved ? JSON.parse(saved) : INITIAL_GOALS;
+    } catch {
+      return INITIAL_GOALS;
+    }
   });
 
   const [studyLogs, setStudyLogs] = useState<StudyLog[]>(() => {
-    const saved = localStorage.getItem('skillswap_study_logs');
-    return saved ? JSON.parse(saved) : INITIAL_STUDY_LOGS;
+    try {
+      const saved = localStorage.getItem('skillswap_study_logs');
+      return saved ? JSON.parse(saved) : INITIAL_STUDY_LOGS;
+    } catch {
+      return INITIAL_STUDY_LOGS;
+    }
   });
 
   const [notifications, setNotifications] = useState<Notification[]>(() => {
-    const saved = localStorage.getItem('skillswap_notifications');
-    return saved ? JSON.parse(saved) : INITIAL_NOTIFICATIONS;
+    try {
+      const saved = localStorage.getItem('skillswap_notifications');
+      return saved ? JSON.parse(saved) : INITIAL_NOTIFICATIONS;
+    } catch {
+      return INITIAL_NOTIFICATIONS;
+    }
   });
 
-  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>(() => {
-    const saved = localStorage.getItem('skillswap_leaderboard');
-    return saved ? JSON.parse(saved) : INITIAL_LEADERBOARD;
-  });
-
-  const [skillGaps, setSkillGaps] = useState<SkillGapData[]>(INITIAL_SKILL_GAPS);
+  const [skillGaps] = useState<SkillGapData[]>(INITIAL_SKILL_GAPS);
   const [disputes, setDisputes] = useState<Dispute[]>(INITIAL_DISPUTES);
   const [reviews, setReviews] = useState<Review[]>(INITIAL_REVIEWS);
 
@@ -232,70 +371,204 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const [activeQuizSkillId, setActiveQuizSkillId] = useState<string | null>(null);
-  const [activeLiveSessionId, setActiveLiveSessionId] = useState<string | null>('sess_live_1');
+  const [activeLiveSessionId, setActiveLiveSessionId] = useState<string | null>(null);
   const [activeWorkshopId, setActiveWorkshopId] = useState<string | null>(null);
-  const [activeConversationId, setActiveConversationId] = useState<string | null>('conv_1');
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
 
   // Interactive Live Session UI State
-  const [whiteboardElements, setWhiteboardElements] = useState<WhiteboardElement[]>([
-    { id: 'wb_1', type: 'text', x: 40, y: 50, color: '#111111', text: '🤖 QLoRA Architecture Diagram & Weight Projections', authorId: 'usr_meera' }
-  ]);
-  const [inSessionMessages, setInSessionMessages] = useState<InSessionMessage[]>([
-    { id: 'ism_1', sessionId: 'sess_live_1', senderId: 'usr_meera', senderName: 'Meera Patel', text: 'Welcome Aarav! Pull up your Jupyter notebook when ready.', timestamp: '17:01', type: 'text' }
-  ]);
+  const [whiteboardElements, setWhiteboardElements] = useState<WhiteboardElement[]>([]);
+  const [inSessionMessages, setInSessionMessages] = useState<InSessionMessage[]>([]);
 
-  // Persist to LocalStorage on changes
+  // Multi-tab sync BroadcastChannel
+  const broadcastUpdate = useCallback((type: string, payload?: any) => {
+    if (syncChannel) {
+      try {
+        syncChannel.postMessage({ type, payload, timestamp: Date.now() });
+      } catch (err) {
+        console.warn('syncChannel postMessage error:', err);
+      }
+    }
+  }, []);
+
+  const reloadAllFromStorage = useCallback(() => {
+    try {
+      const u = localStorage.getItem('skillswap_users');
+      if (u) setAllUsers(JSON.parse(u));
+      const us = localStorage.getItem('skillswap_user_skills');
+      if (us) setUserSkills(JSON.parse(us));
+      const req = localStorage.getItem('skillswap_requests');
+      if (req) setSessionRequests(JSON.parse(req));
+      const msg = localStorage.getItem('skillswap_messages');
+      if (msg) setMessages(JSON.parse(msg));
+      const conv = localStorage.getItem('skillswap_conversations');
+      if (conv) setConversations(JSON.parse(conv));
+      const live = localStorage.getItem('skillswap_live_sessions');
+      if (live) setLiveSessions(JSON.parse(live));
+      const cert = localStorage.getItem('skillswap_certificates');
+      if (cert) setCertificates(JSON.parse(cert));
+      const tx = localStorage.getItem('skillswap_transactions');
+      if (tx) setTransactions(JSON.parse(tx));
+      const st = localStorage.getItem('skillswap_study_logs');
+      if (st) setStudyLogs(JSON.parse(st));
+      const notif = localStorage.getItem('skillswap_notifications');
+      if (notif) setNotifications(JSON.parse(notif));
+    } catch (e) {
+      console.warn('Storage sync error:', e);
+    }
+  }, []);
+
+  // Listen for multi-tab BroadcastChannel & Storage events
+  useEffect(() => {
+    if (syncChannel) {
+      const handleSync = (event: MessageEvent) => {
+        reloadAllFromStorage();
+      };
+      syncChannel.addEventListener('message', handleSync);
+      return () => syncChannel.removeEventListener('message', handleSync);
+    }
+  }, [reloadAllFromStorage]);
+
+  useEffect(() => {
+    const handleStorageEvent = (e: StorageEvent) => {
+      if (e.key && e.key.startsWith('skillswap_')) {
+        reloadAllFromStorage();
+      }
+    };
+    window.addEventListener('storage', handleStorageEvent);
+    return () => window.removeEventListener('storage', handleStorageEvent);
+  }, [reloadAllFromStorage]);
+
+  // Persist state to localStorage and broadcast
   useEffect(() => {
     localStorage.setItem('skillswap_users', JSON.stringify(allUsers));
-  }, [allUsers]);
+    broadcastUpdate('FULL_SYNC');
+  }, [allUsers, broadcastUpdate]);
 
   useEffect(() => {
     localStorage.setItem('skillswap_user_skills', JSON.stringify(userSkills));
-  }, [userSkills]);
+    broadcastUpdate('FULL_SYNC');
+  }, [userSkills, broadcastUpdate]);
+
+  useEffect(() => {
+    localStorage.setItem('skillswap_certificates', JSON.stringify(certificates));
+    broadcastUpdate('FULL_SYNC');
+  }, [certificates, broadcastUpdate]);
 
   useEffect(() => {
     localStorage.setItem('skillswap_requests', JSON.stringify(sessionRequests));
-  }, [sessionRequests]);
+    broadcastUpdate('FULL_SYNC');
+  }, [sessionRequests, broadcastUpdate]);
+
+  useEffect(() => {
+    localStorage.setItem('skillswap_live_sessions', JSON.stringify(liveSessions));
+    broadcastUpdate('FULL_SYNC');
+  }, [liveSessions, broadcastUpdate]);
+
+  useEffect(() => {
+    localStorage.setItem('skillswap_workshops', JSON.stringify(workshops));
+    broadcastUpdate('FULL_SYNC');
+  }, [workshops, broadcastUpdate]);
+
+  useEffect(() => {
+    localStorage.setItem('skillswap_conversations', JSON.stringify(conversations));
+    broadcastUpdate('FULL_SYNC');
+  }, [conversations, broadcastUpdate]);
+
+  useEffect(() => {
+    localStorage.setItem('skillswap_messages', JSON.stringify(messages));
+    broadcastUpdate('FULL_SYNC');
+  }, [messages, broadcastUpdate]);
 
   useEffect(() => {
     localStorage.setItem('skillswap_transactions', JSON.stringify(transactions));
-  }, [transactions]);
+    broadcastUpdate('FULL_SYNC');
+  }, [transactions, broadcastUpdate]);
 
   useEffect(() => {
     localStorage.setItem('skillswap_goals', JSON.stringify(goals));
-  }, [goals]);
+    broadcastUpdate('FULL_SYNC');
+  }, [goals, broadcastUpdate]);
+
+  useEffect(() => {
+    localStorage.setItem('skillswap_study_logs', JSON.stringify(studyLogs));
+    broadcastUpdate('FULL_SYNC');
+  }, [studyLogs, broadcastUpdate]);
+
+  useEffect(() => {
+    localStorage.setItem('skillswap_notifications', JSON.stringify(notifications));
+    broadcastUpdate('FULL_SYNC');
+  }, [notifications, broadcastUpdate]);
+
+  useEffect(() => {
+    localStorage.setItem('skillswap_study_logs', JSON.stringify(studyLogs));
+  }, [studyLogs]);
+
+  useEffect(() => {
+    localStorage.setItem('skillswap_notifications', JSON.stringify(notifications));
+  }, [notifications]);
+
+  // Derive Dynamic Leaderboard from real users
+  const leaderboard: LeaderboardEntry[] = allUsers
+    .map((u) => {
+      const topSk = userSkills.find(s => s.userId === u.id)?.skillName || 'General Skills';
+      const verifiedCount = userSkills.filter(s => s.userId === u.id && s.isVerified).length;
+      return {
+        rank: 1,
+        userId: u.id,
+        userName: u.name,
+        userAvatar: u.avatar,
+        department: u.department,
+        topSkill: topSk,
+        tokens: u.tokens || u.walletBalance || 0,
+        karma: u.tokens || u.walletBalance || 0,
+        sessionsTaught: u.totalHoursTaught || 0,
+        rating: u.avgRating ?? 0.0,
+        verifiedSkillsCount: verifiedCount,
+        change: 'same' as const
+      };
+    })
+    .sort((a, b) => b.tokens - a.tokens)
+    .map((item, index) => ({ ...item, rank: index + 1 }));
 
   // Switch User Profile
   const setCurrentUserById = (userId: string) => {
     setCurrentUserId(userId);
+    localStorage.setItem('skillswap_current_user_id', userId);
   };
 
-  // Dynamic Teacher Ranking Score (PRD 3.5 formula)
+  // Update User Profile (PFP, Bio, Socials, etc.)
+  const updateUserProfile = (data: Partial<User>) => {
+    if (!currentUser) return;
+    setAllUsers(prev => prev.map(u => {
+      if (u.id === currentUser.id) {
+        return {
+          ...u,
+          ...data,
+          socials: {
+            ...u.socials,
+            ...(data.socials || {})
+          }
+        };
+      }
+      return u;
+    }));
+  };
+
+  // Dynamic Teacher Ranking Score
   const calculateTeacherRankingScore = (teacher: User, userSkill: UserSkill): number => {
-    // 1. Quiz Verification (0-100) -> 25%
     const quizScore = userSkill.isVerified ? (userSkill.verificationScore || 90) : 0;
-    
-    // 2. Rating (0-5 scaled to 0-100) -> 25%
     const ratingScore = (userSkill.rating / 5) * 100;
-
-    // 3. Experience / Sessions Taught -> 20%
-    const expScore = Math.min(100, (userSkill.totalSessionsTaught * 2) + (userSkill.yearsExperience * 15));
-
-    // 4. Leaderboard / Karma -> 15%
-    const karmaScore = Math.min(100, (teacher.karma / 2000) * 100);
-
-    // 5. Relevant Certificates -> 10%
+    const expScore = Math.min(100, (userSkill.totalSessionsTaught * 10) + (userSkill.yearsExperience * 20));
+    const tokenScore = Math.min(100, ((teacher.tokens || teacher.walletBalance || 0) / 1000) * 100);
     const hasCert = certificates.some(c => c.userId === teacher.id && c.skillName.toLowerCase().includes(userSkill.skillName.toLowerCase()) && c.status === 'Verified');
     const certScore = hasCert ? 100 : 30;
-
-    // 6. Response rate fit -> 5%
     const responseScore = teacher.badges.some(b => b.name === 'Fast Responder') ? 100 : 80;
 
     const finalScore = (
       (quizScore * rankingWeights.quiz) +
       (ratingScore * rankingWeights.rating) +
       (expScore * rankingWeights.experience) +
-      (karmaScore * rankingWeights.karma) +
+      (tokenScore * rankingWeights.karma) +
       (certScore * rankingWeights.certs) +
       (responseScore * rankingWeights.response)
     );
@@ -303,7 +576,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return Math.round(finalScore);
   };
 
-  // Submit Verification Quiz (PRD 3.2)
+  // Submit Verification Quiz
   const submitQuizAttempt = (
     skillId: string, 
     answers: Record<string, number>, 
@@ -311,6 +584,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     pricePerHour: number, 
     description: string
   ) => {
+    if (!currentUser) return { passed: false, score: 0, total: 0 };
     const skill = skills.find(s => s.id === skillId);
     if (!skill) return { passed: false, score: 0, total: 0 };
 
@@ -324,10 +598,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     const percentage = Math.round((correctCount / total) * 100);
-    const passed = percentage >= 70; // 70% pass mark
+    const passed = percentage >= 60; // 60% pass mark
 
     if (passed) {
-      // Add or update UserSkill with Verified badge
       const existingIndex = userSkills.findIndex(us => us.userId === currentUser.id && us.skillId === skillId);
       const newSkillEntry: UserSkill = {
         id: `usk_${currentUser.id}_${skillId}_${Date.now()}`,
@@ -357,12 +630,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setUserSkills(prev => [newSkillEntry, ...prev]);
       }
 
-      // Award Karma & Bonus
+      // Award Tokens bonus
       setAllUsers(prev => prev.map(u => {
         if (u.id === currentUser.id) {
           return {
             ...u,
-            karma: u.karma + 50,
+            tokens: (u.tokens || 0) + 50,
+            walletBalance: u.walletBalance + 50,
             badges: [
               ...u.badges,
               {
@@ -379,14 +653,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return u;
       }));
 
-      // Log notification
+      // Log transaction
+      setTransactions(prev => [
+        {
+          id: `tx_quiz_${Date.now()}`,
+          userId: currentUser.id,
+          type: 'TOKEN_BONUS',
+          amount: 50,
+          balanceAfter: currentUser.walletBalance + 50,
+          description: `Skill Quiz Passed: ${skill.name} (+50 Tokens)`,
+          timestamp: new Date().toISOString(),
+          status: 'SUCCESS'
+        },
+        ...prev
+      ]);
+
+      // Notification
       setNotifications(prev => [
         {
           id: `notif_quiz_${Date.now()}`,
           userId: currentUser.id,
           type: 'certificate_verified',
           title: `Verification Challenge Passed! (${percentage}%)`,
-          message: `Your skill "${skill.name}" is now Verified with a public badge. Earned +50 Karma!`,
+          message: `Your skill "${skill.name}" is now Verified with a public badge. +50 Tokens added!`,
           timestamp: new Date().toISOString(),
           isRead: false,
           actionUrl: '/skills'
@@ -399,6 +688,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addNewSkillOffering = (skillData: Partial<UserSkill>) => {
+    if (!currentUser) return;
     const newEntry: UserSkill = {
       id: `usk_${currentUser.id}_${Date.now()}`,
       userId: currentUser.id,
@@ -412,13 +702,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isVerified: false,
       tags: skillData.tags || [],
       totalSessionsTaught: 0,
-      rating: 5.0
+      rating: 5.0,
+      certificateUrl: skillData.certificateUrl,
+      certificateName: skillData.certificateName
     };
     setUserSkills(prev => [newEntry, ...prev]);
   };
 
-  // Upload Certificate
-  const uploadCertificate = (skillName: string, title: string, issuer: string, fileUrl: string) => {
+  // Upload Certificate with image / base64 preview
+  const uploadCertificate = (skillName: string, title: string, issuer: string, fileUrl: string, fileType: 'image' | 'pdf' = 'image') => {
+    if (!currentUser) return;
     const newCert: Certificate = {
       id: `cert_${Date.now()}`,
       userId: currentUser.id,
@@ -426,19 +719,28 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       title,
       issuer,
       issueDate: new Date().toISOString().split('T')[0],
-      fileUrl: fileUrl || 'https://images.unsplash.com/photo-1589330694653-ded6df03f754?w=600&auto=format&fit=crop&q=80',
-      fileType: 'image',
-      status: 'Pending'
+      fileUrl: fileUrl,
+      fileType: fileType,
+      status: 'Verified',
+      reviewedBy: 'Groq AI Certificate Verifier',
+      reviewedAt: new Date().toISOString().split('T')[0]
     };
     setCertificates(prev => [newCert, ...prev]);
+
+    setUserSkills(prev => prev.map(us => {
+      if (us.userId === currentUser.id && us.skillName.toLowerCase() === skillName.toLowerCase()) {
+        return { ...us, isVerified: true, certificateUrl: fileUrl, certificateName: title };
+      }
+      return us;
+    }));
 
     setNotifications(prev => [
       {
         id: `notif_cert_${Date.now()}`,
         userId: currentUser.id,
         type: 'certificate_verified',
-        title: 'Certificate Submitted for Review',
-        message: `"${title}" has been submitted to Department Faculty for verification.`,
+        title: 'Certificate Verified & Approved!',
+        message: `"${title}" has been verified. Your verified badge is now active on your portfolio!`,
         timestamp: new Date().toISOString(),
         isRead: false
       },
@@ -446,14 +748,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     ]);
   };
 
-  // Admin Review Certificate
   const adminReviewCertificate = (certId: string, status: 'Verified' | 'Rejected', reason?: string) => {
     setCertificates(prev => prev.map(c => {
       if (c.id === certId) {
         return {
           ...c,
           status,
-          reviewedBy: currentUser.name,
+          reviewedBy: currentUser?.name || 'Faculty Admin',
           reviewedAt: new Date().toISOString().split('T')[0],
           rejectionReason: reason
         };
@@ -462,7 +763,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   };
 
-  // Create Session Request (PRD 3.6)
+  // Create Session Request
   const createSessionRequest = (
     teacherId: string, 
     skillId: string, 
@@ -473,13 +774,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     tokenPrice: number, 
     message: string
   ): boolean => {
+    if (!currentUser) return false;
     const teacher = allUsers.find(u => u.id === teacherId);
-    const skill = skills.find(s => s.id === skillId) || INITIAL_SKILLS[0];
     if (!teacher) return false;
+    const skill = skills.find(s => s.id === skillId) || userSkills.find(us => us.skillId === skillId || us.id === skillId) || { id: skillId, name: topic || 'Peer Mentorship' };
+    const skillNameStr = (skill as any).name || (skill as any).skillName || topic || 'Peer Mentorship';
 
-    // Check learner token balance
-    if (currentUser.walletBalance < tokenPrice) {
-      alert(`Insufficient tokens! You need ${tokenPrice} tokens, but currently have ${currentUser.walletBalance}.`);
+    const effectiveBalance = currentUser.skillpoints ?? currentUser.walletBalance ?? currentUser.tokens ?? 50;
+    const price = Number(tokenPrice) || 15;
+    if (effectiveBalance < price) {
+      alert(`Insufficient SkillPoints! You need ${price} SP, but currently have ${effectiveBalance} SP.`);
       return false;
     }
 
@@ -492,89 +796,109 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       teacherName: teacher.name,
       teacherAvatar: teacher.avatar,
       skillId: skill.id,
-      skillName: skill.name,
-      topic,
-      goal,
-      requestedDate: date,
-      requestedTime: time,
-      tokenPrice,
+      skillName: skillNameStr,
+      topic: topic || `1:1 Mentorship with ${teacher.name}`,
+      goal: goal || 'Peer skill exchange and collaboration',
+      requestedDate: date || new Date().toISOString().split('T')[0],
+      requestedTime: time || '16:00 - 17:00',
+      tokenPrice: price,
       status: 'pending_teacher',
-      message,
+      message: message || '',
       counterRounds: [],
       maxRounds: 3,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
 
-    setSessionRequests(prev => [newRequest, ...prev]);
+    setSessionRequests(prev => {
+      const updated = [newRequest, ...prev];
+      localStorage.setItem('skillswap_requests', JSON.stringify(updated));
+      return updated;
+    });
 
-    // Send in-app notification to teacher
-    setNotifications(prev => [
-      {
+    setNotifications(prev => {
+      const newNotif: Notification = {
         id: `notif_req_${Date.now()}`,
         userId: teacher.id,
         type: 'request_received',
         title: `New Session Request from ${currentUser.name}`,
-        message: `Topic: "${topic}" (${tokenPrice} tokens/hr offered).`,
+        message: `Topic: "${newRequest.topic}" (${price} SP offered).`,
         timestamp: new Date().toISOString(),
         isRead: false,
         actionUrl: '/requests'
-      },
-      ...prev
-    ]);
+      };
+      const updated = [newNotif, ...prev];
+      localStorage.setItem('skillswap_notifications', JSON.stringify(updated));
+      return updated;
+    });
+
+    broadcastUpdate('FULL_SYNC', { type: 'REQUEST_CREATED', requestId: newRequest.id });
 
     return true;
   };
 
-  // Accept Request (PRD 3.6: Locks Escrow, Updates Calendar & Creates Live Session)
+  // Accept Request
   const acceptSessionRequest = (requestId: string) => {
     const req = sessionRequests.find(r => r.id === requestId);
     if (!req) return;
 
     // Lock tokens in Escrow from Learner's wallet
-    setAllUsers(prev => prev.map(u => {
-      if (u.id === req.learnerId) {
-        return {
-          ...u,
-          walletBalance: u.walletBalance - req.tokenPrice,
-          escrowBalance: u.escrowBalance + req.tokenPrice
-        };
-      }
-      return u;
-    }));
+    setAllUsers(prev => {
+      const updated = prev.map(u => {
+        if (u.id === req.learnerId) {
+          const newBal = Math.max(0, (u.skillpoints ?? u.walletBalance ?? 50) - req.tokenPrice);
+          return {
+            ...u,
+            walletBalance: newBal,
+            skillpoints: newBal,
+            tokens: newBal,
+            escrowBalance: (u.escrowBalance || 0) + req.tokenPrice
+          };
+        }
+        return u;
+      });
+      localStorage.setItem('skillswap_users', JSON.stringify(updated));
+      return updated;
+    });
 
     // Record Escrow Hold transaction
-    setTransactions(prev => [
-      {
+    setTransactions(prev => {
+      const newTx: Transaction = {
         id: `tx_escrow_${Date.now()}`,
         userId: req.learnerId,
         type: 'SESSION_ESCROW_HOLD',
         amount: -req.tokenPrice,
-        balanceAfter: (currentUser.id === req.learnerId ? currentUser.walletBalance - req.tokenPrice : 100),
+        balanceAfter: Math.max(0, (currentUser?.walletBalance ?? 50) - req.tokenPrice),
         description: `Escrow Hold: 1:1 Session with ${req.teacherName} on ${req.skillName}`,
         timestamp: new Date().toISOString(),
         status: 'PENDING',
         referenceId: req.id
-      },
-      ...prev
-    ]);
+      };
+      const updated = [newTx, ...prev];
+      localStorage.setItem('skillswap_transactions', JSON.stringify(updated));
+      return updated;
+    });
 
     // Update Request status
-    setSessionRequests(prev => prev.map(r => {
-      if (r.id === requestId) {
-        return {
-          ...r,
-          status: 'accepted',
-          updatedAt: new Date().toISOString(),
-          confirmedSlot: {
-            date: r.requestedDate,
-            startTime: r.requestedTime.split('-')[0]?.trim() || '16:00',
-            endTime: r.requestedTime.split('-')[1]?.trim() || '17:00'
-          }
-        };
-      }
-      return r;
-    }));
+    setSessionRequests(prev => {
+      const updated = prev.map(r => {
+        if (r.id === requestId) {
+          return {
+            ...r,
+            status: 'accepted' as RequestStatus,
+            updatedAt: new Date().toISOString(),
+            confirmedSlot: {
+              date: r.requestedDate,
+              startTime: r.requestedTime.split('-')[0]?.trim() || '16:00',
+              endTime: r.requestedTime.split('-')[1]?.trim() || '17:00'
+            }
+          };
+        }
+        return r;
+      });
+      localStorage.setItem('skillswap_requests', JSON.stringify(updated));
+      return updated;
+    });
 
     // Spawn confirmed LiveSession
     const newSession: LiveSession = {
@@ -599,40 +923,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       recordingEnabled: false
     };
 
-    setLiveSessions(prev => [newSession, ...prev]);
+    setLiveSessions(prev => {
+      const updated = [newSession, ...prev];
+      localStorage.setItem('skillswap_live_sessions', JSON.stringify(updated));
+      return updated;
+    });
 
-    // Notify learner
-    setNotifications(prev => [
-      {
+    setNotifications(prev => {
+      const newNotif: Notification = {
         id: `notif_acc_${Date.now()}`,
         userId: req.learnerId,
         type: 'request_accepted',
         title: `Session Confirmed with ${req.teacherName}!`,
-        message: `${req.tokenPrice} tokens are now safely held in Escrow. Slot scheduled for ${req.requestedDate}.`,
+        message: `${req.tokenPrice} SkillPoints held in Escrow. Live video room unlocked.`,
         timestamp: new Date().toISOString(),
         isRead: false,
         actionUrl: `/sessions/${newSession.id}`
-      },
-      ...prev
-    ]);
+      };
+      const updated = [newNotif, ...prev];
+      localStorage.setItem('skillswap_notifications', JSON.stringify(updated));
+      return updated;
+    });
+
+    broadcastUpdate('FULL_SYNC', { type: 'REQUEST_ACCEPTED', sessionId: newSession.id });
   };
 
-  // Reject Request (PRD 3.6)
   const rejectSessionRequest = (requestId: string, reason: string) => {
-    setSessionRequests(prev => prev.map(r => {
-      if (r.id === requestId) {
-        return {
-          ...r,
-          status: 'rejected',
-          rejectionReason: reason,
-          updatedAt: new Date().toISOString()
-        };
-      }
-      return r;
-    }));
+    setSessionRequests(prev => {
+      const updated = prev.map(r => {
+        if (r.id === requestId) {
+          return {
+            ...r,
+            status: 'rejected' as RequestStatus,
+            rejectionReason: reason,
+            updatedAt: new Date().toISOString()
+          };
+        }
+        return r;
+      });
+      localStorage.setItem('skillswap_requests', JSON.stringify(updated));
+      return updated;
+    });
+    broadcastUpdate('FULL_SYNC', { type: 'REQUEST_REJECTED', requestId });
   };
 
-  // Counter-Offer (PRD 3.6: max 3 rounds)
   const counterOfferRequest = (
     requestId: string, 
     tokenPrice: number, 
@@ -640,36 +974,41 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     proposedTime: string, 
     note: string
   ) => {
-    setSessionRequests(prev => prev.map(r => {
-      if (r.id === requestId) {
-        const isTeacher = currentUser.id === r.teacherId;
-        const newCounter: CounterProposal = {
-          proposedBy: currentUser.id,
-          tokenPrice,
-          proposedDate,
-          proposedTime,
-          note,
-          timestamp: new Date().toISOString()
-        };
+    if (!currentUser) return;
+    setSessionRequests(prev => {
+      const updated = prev.map(r => {
+        if (r.id === requestId) {
+          const isTeacher = currentUser.id === r.teacherId;
+          const newCounter: CounterProposal = {
+            proposedBy: currentUser.id,
+            tokenPrice,
+            proposedDate,
+            proposedTime,
+            note,
+            timestamp: new Date().toISOString()
+          };
 
-        const updatedRounds = [...r.counterRounds, newCounter];
-        const newStatus: RequestStatus = isTeacher ? 'pending_learner_counter' : 'pending_teacher_counter';
+          const updatedRounds = [...r.counterRounds, newCounter];
+          const newStatus: RequestStatus = isTeacher ? 'pending_learner_counter' : 'pending_teacher_counter';
 
-        return {
-          ...r,
-          tokenPrice,
-          requestedDate: proposedDate,
-          requestedTime: proposedTime,
-          status: updatedRounds.length >= r.maxRounds ? 'expired' : newStatus,
-          counterRounds: updatedRounds,
-          updatedAt: new Date().toISOString()
-        };
-      }
-      return r;
-    }));
+          return {
+            ...r,
+            tokenPrice,
+            requestedDate: proposedDate,
+            requestedTime: proposedTime,
+            status: (updatedRounds.length >= r.maxRounds ? 'expired' : newStatus) as RequestStatus,
+            counterRounds: updatedRounds,
+            updatedAt: new Date().toISOString()
+          };
+        }
+        return r;
+      });
+      localStorage.setItem('skillswap_requests', JSON.stringify(updated));
+      return updated;
+    });
+    broadcastUpdate('FULL_SYNC', { type: 'REQUEST_COUNTER_OFFER', requestId });
   };
 
-  // Live Session Whiteboard & Chat
   const addWhiteboardElement = (elem: WhiteboardElement) => {
     setWhiteboardElements(prev => [...prev, elem]);
   };
@@ -679,6 +1018,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const sendInSessionMessage = (sessionId: string, text: string, type: 'text' | 'code' | 'file' = 'text', codeLang?: string) => {
+    if (!currentUser) return;
     const newMsg: InSessionMessage = {
       id: `ism_${Date.now()}`,
       sessionId,
@@ -692,12 +1032,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setInSessionMessages(prev => [...prev, newMsg]);
   };
 
-  // Complete Live Session & Escrow Release (PRD 3.7 & 3.12)
   const completeLiveSession = (sessionId: string, rating: number, feedback: string) => {
     const session = liveSessions.find(s => s.id === sessionId);
     if (!session) return;
 
-    // 1. Move escrow tokens from Learner to Teacher wallet
     setAllUsers(prev => prev.map(u => {
       if (u.id === session.learnerId) {
         return {
@@ -705,7 +1043,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           escrowBalance: Math.max(0, u.escrowBalance - session.tokenAmount),
           totalHoursLearned: u.totalHoursLearned + 1,
           sessionsCompletedCount: u.sessionsCompletedCount + 1,
-          karma: u.karma + 10 // learner karma for completing
+          tokens: (u.tokens || 0) + 10,
+          karma: (u.tokens || 0) + 10
         };
       }
       if (u.id === session.teacherId) {
@@ -716,7 +1055,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           walletBalance: u.walletBalance + session.tokenAmount,
           totalHoursTaught: u.totalHoursTaught + 1,
           sessionsCompletedCount: u.sessionsCompletedCount + 1,
-          karma: u.karma + 40, // teacher karma for teaching
+          tokens: (u.tokens || 0) + session.tokenAmount + 25,
+          karma: (u.tokens || 0) + session.tokenAmount + 25,
           avgRating: newRating,
           reviewCount: newCount
         };
@@ -724,14 +1064,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return u;
     }));
 
-    // 2. Add Escrow Release transaction ledger
     setTransactions(prev => [
       {
         id: `tx_release_${Date.now()}`,
         userId: session.teacherId,
         type: 'SESSION_ESCROW_RELEASE',
         amount: session.tokenAmount,
-        balanceAfter: 360,
+        balanceAfter: 200,
         description: `Teaching Payout: 1 hr session on ${session.skillName} with ${session.learnerName}`,
         timestamp: new Date().toISOString(),
         status: 'SUCCESS',
@@ -740,7 +1079,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...prev
     ]);
 
-    // 3. Mark session complete & released
     setLiveSessions(prev => prev.map(s => {
       if (s.id === sessionId) {
         return {
@@ -753,7 +1091,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return s;
     }));
 
-    // 4. Save rating & review
     if (feedback) {
       setReviews(prev => [
         {
@@ -772,14 +1109,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ]);
     }
 
-    // 5. Notifications
     setNotifications(prev => [
       {
         id: `notif_comp_${Date.now()}`,
         userId: session.teacherId,
         type: 'tokens_received',
         title: `+${session.tokenAmount} Tokens Received!`,
-        message: `${session.learnerName} rated your session ${rating}⭐ and confirmed completion. Escrow released.`,
+        message: `${session.learnerName} confirmed session completion (${rating}⭐). Tokens deposited to your wallet.`,
         timestamp: new Date().toISOString(),
         isRead: false
       },
@@ -787,18 +1123,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     ]);
   };
 
-  // Raise Dispute (PRD 3.7 Escrow Freezing)
   const raiseLiveSessionDispute = (sessionId: string, reason: string, evidence: string) => {
+    if (!currentUser) return;
     const session = liveSessions.find(s => s.id === sessionId);
     if (!session) return;
 
     setLiveSessions(prev => prev.map(s => {
       if (s.id === sessionId) {
-        return {
-          ...s,
-          status: 'disputed',
-          escrowStatus: 'Frozen_Disputed'
-        };
+        return { ...s, status: 'disputed', escrowStatus: 'Frozen_Disputed' };
       }
       return s;
     }));
@@ -819,12 +1151,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setDisputes(prev => [newDispute, ...prev]);
-
-    alert('Dispute logged with Campus Arbiters. Escrow token release is frozen pending faculty review.');
+    alert('Dispute logged. Escrow token release is frozen pending faculty review.');
   };
 
   // Workshops
   const createWorkshop = (wsData: any) => {
+    if (!currentUser) return;
     const newWs: Workshop = {
       id: `ws_${Date.now()}`,
       teacherId: currentUser.id,
@@ -850,6 +1182,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const enrollInWorkshop = (workshopId: string): boolean => {
+    if (!currentUser) return false;
     const ws = workshops.find(w => w.id === workshopId);
     if (!ws) return false;
 
@@ -858,7 +1191,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return false;
     }
 
-    // Debit tokens
     setAllUsers(prev => prev.map(u => {
       if (u.id === currentUser.id) {
         return {
@@ -869,7 +1201,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return u;
     }));
 
-    // Record transaction
     setTransactions(prev => [
       {
         id: `tx_ws_${Date.now()}`,
@@ -885,7 +1216,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...prev
     ]);
 
-    // Add attendee
     setWorkshops(prev => prev.map(w => {
       if (w.id === workshopId) {
         return {
@@ -909,6 +1239,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const askWorkshopQA = (workshopId: string, question: string) => {
+    if (!currentUser) return;
     setWorkshops(prev => prev.map(w => {
       if (w.id === workshopId) {
         return {
@@ -944,6 +1275,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const toggleHandRaise = (workshopId: string) => {
+    if (!currentUser) return;
     setWorkshops(prev => prev.map(w => {
       if (w.id === workshopId) {
         return {
@@ -962,12 +1294,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Direct Messaging
   const sendDirectMessage = (receiverId: string, text: string, attachmentUrl?: string) => {
-    const conv = conversations.find(c => c.participantIds.includes(currentUser.id) && c.participantIds.includes(receiverId));
-    const conversationId = conv ? conv.id : `conv_${Date.now()}`;
+    if (!currentUser) return;
+    
+    const existingConv = conversations.find(c => 
+      c.participantIds.includes(currentUser.id) && c.participantIds.includes(receiverId)
+    );
+
+    const convId = existingConv ? existingConv.id : `conv_${Date.now()}`;
 
     const newMsg: Message = {
       id: `msg_${Date.now()}`,
-      conversationId,
+      conversationId: convId,
       senderId: currentUser.id,
       senderName: currentUser.name,
       receiverId,
@@ -979,27 +1316,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setMessages(prev => [...prev, newMsg]);
 
-    if (!conv) {
+    if (!existingConv) {
       const receiver = allUsers.find(u => u.id === receiverId);
       if (receiver) {
-        setConversations(prev => [
-          {
-            id: conversationId,
-            participantIds: [currentUser.id, receiverId],
-            participantDetails: [
-              { id: currentUser.id, name: currentUser.name, avatar: currentUser.avatar, department: currentUser.department },
-              { id: receiver.id, name: receiver.name, avatar: receiver.avatar, department: receiver.department }
-            ],
-            lastMessage: text,
-            lastMessageTimestamp: new Date().toISOString(),
-            unreadCount: 0
-          },
-          ...prev
-        ]);
+        const newConv: Conversation = {
+          id: convId,
+          participantIds: [currentUser.id, receiverId],
+          participantDetails: [
+            { id: currentUser.id, name: currentUser.name, avatar: currentUser.avatar, department: currentUser.department },
+            { id: receiver.id, name: receiver.name, avatar: receiver.avatar, department: receiver.department }
+          ],
+          lastMessage: text,
+          lastMessageTimestamp: new Date().toISOString(),
+          unreadCount: 0
+        };
+        setConversations(prev => [newConv, ...prev]);
+        setActiveConversationId(convId);
       }
     } else {
       setConversations(prev => prev.map(c => {
-        if (c.id === conversationId) {
+        if (c.id === existingConv.id) {
           return {
             ...c,
             lastMessage: text,
@@ -1008,11 +1344,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
         return c;
       }));
+      setActiveConversationId(existingConv.id);
     }
   };
 
-  // Study Tracker (PRD 3.10)
-  const logStudySession = (skillName: string, durationMinutes: number, type: 'self_pomodoro' | 'session_learned' | 'session_taught', notes?: string) => {
+  // Study Tracker & Focus Sessions
+  const logStudySession = (
+    skillName: string, 
+    durationMinutes: number, 
+    type: 'self_pomodoro' | 'camera_focus' | 'session_learned' | 'session_taught', 
+    notes?: string,
+    focusScore?: number,
+    distractionCount?: number,
+    tokensAwarded: number = 10
+  ) => {
+    if (!currentUser) return;
     const newLog: StudyLog = {
       id: `sl_${Date.now()}`,
       userId: currentUser.id,
@@ -1020,13 +1366,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       durationMinutes,
       date: new Date().toISOString().split('T')[0],
       type,
-      notes
+      notes,
+      focusScore,
+      distractionCount,
+      tokensAwarded
     };
     setStudyLogs(prev => [newLog, ...prev]);
+
+    if (tokensAwarded > 0) {
+      setAllUsers(prev => prev.map(u => {
+        if (u.id === currentUser.id) {
+          return {
+            ...u,
+            tokens: (u.tokens || 0) + tokensAwarded,
+            karma: (u.tokens || 0) + tokensAwarded,
+            walletBalance: u.walletBalance + tokensAwarded
+          };
+        }
+        return u;
+      }));
+
+      setTransactions(prev => [
+        {
+          id: `tx_focus_${Date.now()}`,
+          userId: currentUser.id,
+          type: 'FOCUS_REWARD',
+          amount: tokensAwarded,
+          balanceAfter: currentUser.walletBalance + tokensAwarded,
+          description: `Focus Study Reward: ${durationMinutes} mins on ${skillName} (+${tokensAwarded} Tokens)`,
+          timestamp: new Date().toISOString(),
+          status: 'SUCCESS'
+        },
+        ...prev
+      ]);
+    }
   };
 
-  // Learning Goals (PRD 3.11)
+  // Goals
   const createGoal = (title: string, skillName: string, targetDate: string, milestoneTitles: string[]) => {
+    if (!currentUser) return;
     const newGoal: Goal = {
       id: `goal_${Date.now()}`,
       userId: currentUser.id,
@@ -1040,6 +1418,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         title: t,
         completed: false,
         targetDate,
+        tokenReward: 25,
         karmaReward: 25
       }))
     };
@@ -1047,14 +1426,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const toggleMilestone = (goalId: string, milestoneId: string) => {
+    if (!currentUser) return;
     setGoals(prev => prev.map(g => {
       if (g.id === goalId) {
         const updatedMilestones = g.milestones.map(m => {
           if (m.id === milestoneId) {
             const willComplete = !m.completed;
             if (willComplete) {
-              // Award Karma
-              setAllUsers(uList => uList.map(u => u.id === currentUser.id ? { ...u, karma: u.karma + m.karmaReward } : u));
+              setAllUsers(uList => uList.map(u => u.id === currentUser.id ? { 
+                ...u, 
+                tokens: (u.tokens || 0) + m.tokenReward,
+                karma: (u.tokens || 0) + m.tokenReward,
+                walletBalance: u.walletBalance + m.tokenReward
+              } : u));
             }
             return {
               ...m,
@@ -1078,13 +1462,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   };
 
-  // Admin Dispute Resolution
   const resolveDispute = (disputeId: string, resolution: 'Resolved_Refund_Learner' | 'Resolved_Release_Teacher', note: string) => {
     const dispute = disputes.find(d => d.id === disputeId);
     if (!dispute) return;
 
     if (resolution === 'Resolved_Refund_Learner') {
-      // Refund tokens back to learner wallet
       setAllUsers(prev => prev.map(u => {
         if (u.id === dispute.openedByUserId) {
           return { ...u, walletBalance: u.walletBalance + dispute.tokenAmount };
@@ -1092,7 +1474,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return u;
       }));
     } else {
-      // Release tokens to teacher
       setAllUsers(prev => prev.map(u => {
         if (u.id === dispute.againstUserId) {
           return { ...u, walletBalance: u.walletBalance + dispute.tokenAmount };
@@ -1105,7 +1486,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const grantStarterTokens = (userId: string, amount: number, reason: string) => {
-    setAllUsers(prev => prev.map(u => u.id === userId ? { ...u, walletBalance: u.walletBalance + amount } : u));
+    setAllUsers(prev => prev.map(u => u.id === userId ? { 
+      ...u, 
+      tokens: (u.tokens || 0) + amount,
+      karma: (u.tokens || 0) + amount,
+      walletBalance: u.walletBalance + amount 
+    } : u));
     setTransactions(prev => [
       {
         id: `tx_grant_${Date.now()}`,
@@ -1121,6 +1507,108 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     ]);
   };
 
+  // Authentication handlers
+  const loginUser = (email: string, password?: string): boolean => {
+    const user = allUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
+    if (user) {
+      setCurrentUserId(user.id);
+      setIsLoggedIn(true);
+      setIsAuthModalOpen(false);
+      sessionStorage.setItem('skillswap_tab_user_id', user.id);
+      localStorage.setItem('skillswap_logged_in', 'true');
+      localStorage.setItem('skillswap_current_user_id', user.id);
+      return true;
+    }
+    return false;
+  };
+
+  const registerUser = (userData: Partial<User> & { avatar?: string; socials?: SocialLinks }) => {
+    const newUserId = `usr_${Date.now()}`;
+    const newUser: User = {
+      id: newUserId,
+      name: userData.name || 'New Student',
+      email: userData.email || `${newUserId}@campus.edu`,
+      role: 'student',
+      department: userData.department || 'Computer Science & Engineering',
+      year: userData.year || '1st Year Undergraduate',
+      bio: userData.bio || 'Campus learner exploring peer skill exchange.',
+      avatar: userData.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
+      timezone: 'IST (UTC+5:30)',
+      skillpoints: 50,
+      tokens: 50,
+      karma: 50,
+      leaderboardRank: allUsers.length + 1,
+      walletBalance: 50,
+      escrowBalance: 0,
+      totalHoursTaught: 0,
+      totalHoursLearned: 0,
+      sessionsCompletedCount: 0,
+      avgRating: 0.0,
+      reviewCount: 0,
+      isVerifiedStudent: true,
+      joinedDate: new Date().toISOString().split('T')[0],
+      socials: userData.socials || {},
+      skillsLearning: userData.skillsLearning || [],
+      badges: [
+        {
+          id: `b_welcome_${Date.now()}`,
+          name: 'Campus Pioneer',
+          icon: '🎓',
+          description: 'Joined SkillSwap Campus Network',
+          dateEarned: new Date().toISOString().split('T')[0],
+          category: 'community'
+        },
+        {
+          id: `b_early_${Date.now()}`,
+          name: 'Early Adopter',
+          icon: '⚡',
+          description: 'First Semester Founding Member',
+          dateEarned: new Date().toISOString().split('T')[0],
+          category: 'community'
+        },
+        {
+          id: `b_learner_${Date.now()}`,
+          name: 'First Step',
+          icon: '📚',
+          description: 'Ready for 1:1 Peer Sessions',
+          dateEarned: new Date().toISOString().split('T')[0],
+          category: 'learning'
+        }
+      ]
+    };
+
+    setAllUsers(prev => [newUser, ...prev]);
+    setCurrentUserId(newUserId);
+    setIsLoggedIn(true);
+    setIsAuthModalOpen(false);
+    sessionStorage.setItem('skillswap_tab_user_id', newUserId);
+    localStorage.setItem('skillswap_logged_in', 'true');
+    localStorage.setItem('skillswap_current_user_id', newUserId);
+
+    setTransactions(prev => [
+      {
+        id: `tx_welcome_${Date.now()}`,
+        userId: newUserId,
+        type: 'WELCOME_GRANT',
+        amount: 50,
+        balanceAfter: 50,
+        description: 'Campus Onboarding Welcome Grant (+50 SkillPoints)',
+        timestamp: new Date().toISOString(),
+        status: 'SUCCESS'
+      },
+      ...prev
+    ]);
+  };
+
+  const logoutUser = () => {
+    setIsLoggedIn(false);
+    setCurrentUserId('');
+    setIsAuthModalOpen(true);
+    sessionStorage.removeItem('skillswap_tab_user_id');
+    localStorage.removeItem('skillswap_logged_in');
+    localStorage.removeItem('skillswap_current_user_id');
+  };
+
   const markNotificationRead = (notifId: string) => {
     setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, isRead: true } : n));
   };
@@ -1131,6 +1619,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   return (
     <AppContext.Provider value={{
+      isLoggedIn,
+      isAuthModalOpen,
+      setIsAuthModalOpen,
+      loginUser,
+      registerUser,
+      logoutUser,
+      updateUserProfile,
       currentTab,
       setCurrentTab,
       currentUser,
